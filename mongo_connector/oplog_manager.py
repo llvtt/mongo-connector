@@ -123,7 +123,6 @@ class OplogThread(threading.Thread):
             last_ts = None
             err = False
             try:
-<<<<<<< HEAD
                 while cursor.alive:
                     for entry in cursor:
                         #sync the current oplog operation
@@ -138,6 +137,8 @@ class OplogThread(threading.Thread):
                         #delete
                         if operation == 'd':
                             entry['_id'] = entry['o']['_id']
+                            ind = self.namespace_set.index(entry["ns"])
+                            entry["ns"] = self.dest_namespace_set[ind]
                             self.doc_manager.remove(entry)
                         #insert/update. They are equal because of lack of support
                         #for partial update
@@ -146,45 +147,14 @@ class OplogThread(threading.Thread):
                             if doc is not None:
                                 doc['_ts'] = util.bson_ts_to_long(entry['ts'])
                                 doc['ns'] = ns
+                                ind = self.namespace_set.index(doc["ns"])
+                                doc["ns"] = self.dest_namespace_set[ind]
                                 try:
                                     self.doc_manager.upsert(doc)
                                 except SystemError:
                                     logging.error("Unable to insert %s" % (doc))
 
                         last_ts = entry['ts']
-=======
-                for entry in cursor:
-                    #sync the current oplog operation
-                    operation = entry['op']
-
-                    #check if ns is excluded or not.
-                    #also ensure non-empty namespace set.
-                    if (entry['ns'] not in self.namespace_set 
-                            and self.namespace_set):
-                        continue
-
-                    #delete
-                    if operation == 'd':
-                        entry['_id'] = entry['o']['_id']
-                        ind = self.namespace_set.index(entry['ns'])
-                        entry['ns'] = self.dest_namespace_set[ind]
-                        self.doc_manager.remove(entry)
-                    #insert/update. They are equal because of lack of support
-                    #for partial update
-                    elif operation == 'i' or operation == 'u':
-                        doc = self.retrieve_doc(entry)
-                        if doc is not None:
-                            doc['_ts'] = util.bson_ts_to_long(entry['ts'])
-                            doc['ns'] = entry['ns']
-                            ind = self.namespace_set.index(doc['ns'])
-                            doc['ns'] = self.dest_namespace_set[ind]
-                            try:
-                                self.doc_manager.upsert(doc)
-                            except SystemError:
-                                logging.error("Unable to insert %s" % (doc))
-
-                    last_ts = entry['ts']
->>>>>>> c44b78fb75d7f912ff67e190fb727f84a575265f
             except (pymongo.errors.AutoReconnect,
                     pymongo.errors.OperationFailure):
                 err = True
