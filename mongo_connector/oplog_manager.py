@@ -35,7 +35,7 @@ class OplogThread(threading.Thread):
     """OplogThread gathers the updates for a single oplog.
     """
     def __init__(self, primary_conn, main_address, oplog_coll, is_sharded,
-                 doc_manager, oplog_progress_dict, namespace_set, auth_key,
+                 doc_manager, oplog_progress_dict, namespace_set, dest_namespace_set, auth_key,
                  auth_username, repl_set=None):
         """Initialize the oplog thread.
         """
@@ -71,6 +71,9 @@ class OplogThread(threading.Thread):
 
         #The set of namespaces to process from the mongo cluster.
         self.namespace_set = namespace_set
+
+        #The set of destination namespaces
+        self.dest_namespace_set = dest_namespace_set
 
         #If authentication is used, this is an admin password.
         self.auth_key = auth_key
@@ -120,6 +123,7 @@ class OplogThread(threading.Thread):
             last_ts = None
             err = False
             try:
+<<<<<<< HEAD
                 while cursor.alive:
                     for entry in cursor:
                         #sync the current oplog operation
@@ -148,6 +152,39 @@ class OplogThread(threading.Thread):
                                     logging.error("Unable to insert %s" % (doc))
 
                         last_ts = entry['ts']
+=======
+                for entry in cursor:
+                    #sync the current oplog operation
+                    operation = entry['op']
+
+                    #check if ns is excluded or not.
+                    #also ensure non-empty namespace set.
+                    if (entry['ns'] not in self.namespace_set 
+                            and self.namespace_set):
+                        continue
+
+                    #delete
+                    if operation == 'd':
+                        entry['_id'] = entry['o']['_id']
+                        ind = self.namespace_set.index(entry['ns'])
+                        entry['ns'] = self.dest_namespace_set[ind]
+                        self.doc_manager.remove(entry)
+                    #insert/update. They are equal because of lack of support
+                    #for partial update
+                    elif operation == 'i' or operation == 'u':
+                        doc = self.retrieve_doc(entry)
+                        if doc is not None:
+                            doc['_ts'] = util.bson_ts_to_long(entry['ts'])
+                            doc['ns'] = entry['ns']
+                            ind = self.namespace_set.index(doc['ns'])
+                            doc['ns'] = self.dest_namespace_set[ind]
+                            try:
+                                self.doc_manager.upsert(doc)
+                            except SystemError:
+                                logging.error("Unable to insert %s" % (doc))
+
+                    last_ts = entry['ts']
+>>>>>>> c44b78fb75d7f912ff67e190fb727f84a575265f
             except (pymongo.errors.AutoReconnect,
                     pymongo.errors.OperationFailure):
                 err = True
@@ -249,6 +286,8 @@ class OplogThread(threading.Thread):
 
         dump_set = self.namespace_set
 
+        dest_dump_set = self.dest_namespace_set
+
         #no namespaces specified
         if not self.namespace_set:
             db_list = self.main_connection.database_names()
@@ -261,6 +300,7 @@ class OplogThread(threading.Thread):
                         continue
                     namespace = str(database) + "." + str(coll)
                     dump_set.append(namespace)
+            dest_dump_set = dump_set[:]
 
         timestamp = util.retry_until_ok(self.get_last_oplog_timestamp)
         if timestamp is None:
@@ -274,6 +314,8 @@ class OplogThread(threading.Thread):
             try:
                 for doc in cursor:
                     doc['ns'] = namespace
+                    ind = self.namespace_set.index(doc['ns'])
+                    doc['ns'] = self.dest_namespace_set[ind]
                     doc['_ts'] = long_ts
                     try:
                         self.doc_manager.upsert(doc)
@@ -408,7 +450,7 @@ class OplogThread(threading.Thread):
             #insert the ones from mongo
             for doc in to_index:
                 doc['_ts'] = util.bson_ts_to_long(rollback_cutoff_ts)
-                doc['ns'] = namespace
+                doc['ns'] = dest_namespace
                 try:
                     self.doc_manager.upsert(doc)
                 except SystemError:
