@@ -30,11 +30,11 @@ sys.path[0:0] = [""]
 try:
     from pymongo import MongoClient as Connection
 except ImportError:
-    from pymongo import Connection    
+    from pymongo import Connection
 from tests.setup_cluster import (kill_mongo_proc,
                                  kill_all,
-                                 start_mongo_proc, 
-                                 start_cluster, 
+                                 start_mongo_proc,
+                                 start_cluster,
                                  start_single_mongod_instance)
 from mongo_connector.doc_managers.mongo_doc_manager import DocManager
 from mongo_connector.connector import Connector
@@ -54,7 +54,7 @@ PORTS_ONE['MONGOS'] = MAIN_ADDR
 class TestSynchronizer(unittest.TestCase):
     """ Tests the mongo instance
     """
-    
+
     def runTest(self):
         """ Runs the tests
         """
@@ -71,7 +71,7 @@ class TestSynchronizer(unittest.TestCase):
             cls.conn = Connection("%s:%s" % (HOSTNAME,  PORTS_ONE['MONGOS']),
                           replicaSet="demo-repl")
     @classmethod
-    def tearDownClass(cls):        
+    def tearDownClass(cls):
         """ Kills cluster instance
         """
         kill_mongo_proc(HOSTNAME, 30000)
@@ -83,11 +83,12 @@ class TestSynchronizer(unittest.TestCase):
     def setUp(self):
         if not self.flag:
             self.fail("Shards cannot be added to mongos")
-        self.connector = Connector("%s:%s" % (HOSTNAME, PORTS_ONE["MONGOS"]),
-           CONFIG, '%s:30000' % (HOSTNAME),
-           ['test.test'],
-           '_id', None,
-           'mongo_connector/doc_managers/mongo_doc_manager.py')
+        self.connector = Connector(
+            "%s:%s" % (HOSTNAME, PORTS_ONE["MONGOS"]),
+            CONFIG, '%s:30000' % (HOSTNAME),
+            ['test.test'],['test.test'],
+            '_id', None,
+            'mongo_connector/doc_managers/mongo_doc_manager.py')
         self.connector.start()
         while len(self.connector.shard_set) == 0:
             pass
@@ -224,7 +225,7 @@ class TestSynchronizer(unittest.TestCase):
         while len(self.mongo_doc._search()) != 0:
             time.sleep(1)
         for i in range(0, NUMBER_OF_DOC_DIRS):
-            self.conn['test']['test'].insert({'name': 'Paul ' + str(i)}, 
+            self.conn['test']['test'].insert({'name': 'Paul ' + str(i)},
                 safe=True)
 
         while len(self.mongo_doc._search()) != NUMBER_OF_DOC_DIRS:
@@ -242,11 +243,11 @@ class TestSynchronizer(unittest.TestCase):
         while count + 1 < NUMBER_OF_DOC_DIRS:
             try:
                 count += 1
-                self.conn['test']['test'].insert({'name': 'Pauline ' + 
+                self.conn['test']['test'].insert({'name': 'Pauline ' +
                     str(count)}, safe=True)
             except (OperationFailure, AutoReconnect):
                 time.sleep(1)
-        while (len(self.mongo_doc._search()) != 
+        while (len(self.mongo_doc._search()) !=
                 self.conn['test']['test'].find().count()):
             time.sleep(1)
         result_set_1 = self.mongo_doc._search()

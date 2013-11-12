@@ -35,7 +35,7 @@ import re
 try:
     from pymongo import MongoClient as Connection
 except ImportError:
-    from pymongo import Connection    
+    from pymongo import Connection
 
 from mongo_connector.doc_managers.doc_manager_simulator import DocManager
 from mongo_connector.locking_dict import LockingDict
@@ -116,14 +116,14 @@ class TestOplogManagerSharded(unittest.TestCase):
         if not start_cluster(sharded=True, key_file=cls.AUTH_KEY):
             cls.flag = False
             cls.err_msg = "Shards cannot be added to mongos"
-    
+
     def setUp(self):
         """ Fails if we can't read the key file or if the
         cluster cannot be created.
         """
         if not self.flag:
             self.fail(self.err_msg)
-    
+
     @classmethod
     def tearDownClass(cls):
         """ Kills cluster instance
@@ -151,10 +151,11 @@ class TestOplogManagerSharded(unittest.TestCase):
         primary_conn['local'].create_collection('oplog.rs', capped=True,
                                                 size=1000000)
         namespace_set = ['test.test', 'alpha.foo']
+        dest_set = ['test.test', 'alpha.foo']
         doc_manager = DocManager()
         oplog = OplogThread(primary_conn, mongos_addr, oplog_coll, True,
                             doc_manager, LockingDict(), namespace_set,
-                            cls.AUTH_KEY, AUTH_USERNAME)
+                            dest_set, cls.AUTH_KEY, AUTH_USERNAME)
 
         return (oplog, primary_conn, oplog_coll, mongos)
 
@@ -173,10 +174,11 @@ class TestOplogManagerSharded(unittest.TestCase):
         oplog_coll = primary_conn['local']['oplog.rs']
 
         namespace_set = ['test.test', 'alpha.foo']
+        dest_set = ['test.test', 'alpha.foo']
         doc_manager = DocManager()
         oplog = OplogThread(primary_conn, mongos, oplog_coll, True,
                             doc_manager, LockingDict(), namespace_set,
-                            cls.AUTH_KEY, AUTH_USERNAME)
+                            dest_set, cls.AUTH_KEY, AUTH_USERNAME)
 
         return (oplog, primary_conn, oplog_coll, oplog.main_connection)
 
@@ -347,7 +349,7 @@ class TestOplogManagerSharded(unittest.TestCase):
 
         obj2 = ObjectId('4ff74db3f646462b38000002')
         first_doc = {'name': 'paulie', '_ts': bson_ts_to_long(cutoff_ts),
-                     'ns': 'alpha.foo', 
+                     'ns': 'alpha.foo',
                      '_id': ObjectId('4ff74db3f646462b38000001')}
 
         # try kill one, try restarting

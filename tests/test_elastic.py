@@ -30,7 +30,7 @@ sys.path[0:0] = [""]
 try:
     from pymongo import MongoClient as Connection
 except ImportError:
-    from pymongo import Connection    
+    from pymongo import Connection
 
 from tests.setup_cluster import (kill_mongo_proc,
                                  start_mongo_proc,
@@ -63,11 +63,11 @@ class TestElastic(unittest.TestCase):
         unittest.TestCase.__init__(self)
 
     @classmethod
-    def setUpClass(cls):    
+    def setUpClass(cls):
         """ Starts the cluster
         """
         os.system('rm %s; touch %s' % (CONFIG, CONFIG))
-        cls.elastic_doc = DocManager('http://localhost:9200', 
+        cls.elastic_doc = DocManager('http://localhost:9200',
             auto_commit=False)
         cls.elastic_doc._remove()
         cls.flag = start_cluster()
@@ -75,7 +75,7 @@ class TestElastic(unittest.TestCase):
             cls.conn = Connection('%s:%s' % (HOSTNAME, PORTS_ONE['MONGOS']),
                         replicaSet="demo-repl")
 
-        import logging        
+        import logging
         logger = logging.getLogger()
         loglevel = logging.INFO
         logger.setLevel(loglevel)
@@ -100,7 +100,7 @@ class TestElastic(unittest.TestCase):
         self.connector = Connector(
             '%s:%s' % (HOSTNAME, PORTS_ONE['MONGOS']),
             CONFIG, 'http://localhost:9200',
-            ['test.test'],
+            ['test.test'],['test.test'],
             '_id', None,
             'mongo_connector/doc_managers/elastic_doc_manager.py')
         self.connector.start()
@@ -239,7 +239,7 @@ class TestElastic(unittest.TestCase):
         while len(self.elastic_doc._search()) != 0:
             time.sleep(1)
         for i in range(0, NUMBER_OF_DOC_DIRS):
-            self.conn['test']['test'].insert({'name': 'Paul ' + str(i)}, 
+            self.conn['test']['test'].insert({'name': 'Paul ' + str(i)},
                 safe=True)
 
         while len(self.elastic_doc._search()) != NUMBER_OF_DOC_DIRS:
@@ -309,8 +309,8 @@ class TestElastic(unittest.TestCase):
             self.conn['test']['test'].insert(docs)
         except OperationFailure:
             self.fail("Cannot insert documents into Elastic!")
-        
-        for _ in range(1, 60): 
+
+        for _ in range(1, 60):
             if (len(self.elastic_doc._search()) == len(docs)):
                 break
             time.sleep(1)

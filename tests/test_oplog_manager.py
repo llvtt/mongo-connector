@@ -28,7 +28,7 @@ import socket
 try:
     from pymongo import MongoClient as Connection
 except ImportError:
-    from pymongo import Connection    
+    from pymongo import Connection
 
 sys.path[0:0] = [""]
 
@@ -122,15 +122,17 @@ class TestOplogManager(unittest.TestCase):
         primary_conn['local'].create_collection('oplog.rs', capped=True,
                                                 size=1000000)
         namespace_set = ['test.test']
+        dest_set = ['test.test']
         doc_manager = DocManager()
         oplog = OplogThread(primary_conn, mongos_addr, oplog_coll, is_sharded,
                             doc_manager, LockingDict(),
-                            namespace_set, cls.AUTH_KEY, AUTH_USERNAME,
+                            namespace_set, dest_set,
+                            cls.AUTH_KEY, AUTH_USERNAME,
                             repl_set="demo-repl")
 
         return(oplog, primary_conn, oplog_coll)
-    
-    @classmethod    
+
+    @classmethod
     def get_new_oplog(cls):
         """ Set up connection with mongo. Returns oplog, the connection and
             oplog collection
@@ -149,10 +151,12 @@ class TestOplogManager(unittest.TestCase):
         oplog_coll = primary_conn['local']['oplog.rs']
 
         namespace_set = ['test.test']
+        dest_set = ['test.test']
         doc_manager = DocManager()
         oplog = OplogThread(primary_conn, mongos_addr, oplog_coll, is_sharded,
                             doc_manager, LockingDict(),
-                            namespace_set, cls.AUTH_KEY, AUTH_USERNAME,
+                            namespace_set, dest_set,
+                            cls.AUTH_KEY, AUTH_USERNAME,
                             repl_set="demo-repl")
         return(oplog, primary_conn, oplog.main_connection, oplog_coll)
 
@@ -320,7 +324,7 @@ class TestOplogManager(unittest.TestCase):
         solr._delete()          # equivalent to solr.delete(q='*: *')
 
         mongos['test']['test'].remove({})
-        mongos['test']['test'].insert( 
+        mongos['test']['test'].insert(
              {'_id': ObjectId('4ff74db3f646462b38000001'),
              'name': 'paulie'},
              safe=True
@@ -346,7 +350,7 @@ class TestOplogManager(unittest.TestCase):
             try:
                 mongos['test']['test'].insert({
                     '_id': ObjectId('4ff74db3f646462b38000002'),
-                    'name': 'paul'}, 
+                    'name': 'paul'},
                     safe=True)
                 break
             except OperationFailure:
@@ -380,7 +384,7 @@ class TestOplogManager(unittest.TestCase):
 
         last_ts = test_oplog.get_last_oplog_timestamp()
         second_doc = {'name': 'paul', '_ts': bson_ts_to_long(last_ts),
-                      'ns': 'test.test', 
+                      'ns': 'test.test',
                       '_id': ObjectId('4ff74db3f646462b38000002')}
 
         test_oplog.doc_manager.upsert(first_doc)

@@ -51,7 +51,7 @@ class MongoInternalTester(unittest.TestCase):
         unittest.TestCase.__init__(self)
 
     @classmethod
-    def setUpClass(cls):    
+    def setUpClass(cls):
         """ Initializes the cluster
         """
 
@@ -74,7 +74,7 @@ class MongoInternalTester(unittest.TestCase):
             self.fail("Shards cannot be added to mongos")
 
         conn = Connector(MAIN_ADDRESS, CONFIG, None, ['test.test'],
-                      '_id', None, None)
+                         ['test.test'], '_id', None, None)
         conn.start()
 
         while len(conn.shard_set) != 1:
@@ -92,7 +92,7 @@ class MongoInternalTester(unittest.TestCase):
         os.system('touch %s' % (TEMP_CONFIG))
         config_file_path = TEMP_CONFIG
         conn = Connector(MAIN_ADDRESS, config_file_path, None, ['test.test'],
-                      '_id', None, None)
+                         ['test.test'], '_id', None, None)
 
         #test that None is returned if there is no config file specified.
         self.assertEqual(conn.write_oplog_progress(), None)
@@ -124,8 +124,8 @@ class MongoInternalTester(unittest.TestCase):
         """Test read_oplog_progress
         """
 
-        conn = Connector(MAIN_ADDRESS, None, None, ['test.test'], '_id',
-                      None, None)
+        conn = Connector(MAIN_ADDRESS, None, None, ['test.test'],
+                         ['test.test'], '_id', None, None)
 
         #testing with no file
         self.assertEqual(conn.read_oplog_progress(), None)

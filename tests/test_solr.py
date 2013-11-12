@@ -28,7 +28,7 @@ sys.path[0:0] = [""]
 try:
     from pymongo import MongoClient as Connection
 except ImportError:
-    from pymongo import Connection    
+    from pymongo import Connection
 
 from tests.setup_cluster import (kill_mongo_proc,
                                 start_mongo_proc,
@@ -65,7 +65,7 @@ class TestSynchronizer(unittest.TestCase):
         if cls.flag:
             cls.conn = Connection('%s:%s' % (HOSTNAME, PORTS_ONE['MAIN']),
                 replicaSet="demo-repl")
-            # Creating a Solr object with an invalid URL 
+            # Creating a Solr object with an invalid URL
             # doesn't create an exception
             cls.solr_conn = Solr('http://localhost:8983/solr')
             try:
@@ -73,10 +73,10 @@ class TestSynchronizer(unittest.TestCase):
             except (SolrError, MissingSchema):
                 cls.err_msg = "Cannot connect to Solr!"
                 cls.flag = False
-            if cls.flag:    
+            if cls.flag:
                 cls.solr_conn.delete(q='*:*')
         else:
-            cls.err_msg = "Shards cannot be added to mongos"        
+            cls.err_msg = "Shards cannot be added to mongos"
 
     @classmethod
     def tearDownClass(cls):
@@ -89,9 +89,11 @@ class TestSynchronizer(unittest.TestCase):
         if not self.flag:
             self.fail(self.err_msg)
 
-        self.connector = Connector(('%s:%s' % (HOSTNAME, PORTS_ONE['MAIN'])),
-            CONFIG, 'http://localhost:8983/solr', ['test.test'], '_id',
-            None, 
+        self.connector = Connector(
+            ('%s:%s' % (HOSTNAME, PORTS_ONE['MAIN'])),
+            CONFIG, 'http://localhost:8983/solr',
+            ['test.test'], ['test.test'],
+            '_id', None,
             'mongo_connector/doc_managers/solr_doc_manager.py')
         self.connector.start()
         while len(self.connector.shard_set) == 0:
@@ -189,7 +191,7 @@ class TestSynchronizer(unittest.TestCase):
             except OperationFailure:
                 count += 1
                 if count > 60:
-                    self.fail('Call to insert failed too ' 
+                    self.fail('Call to insert failed too '
                         'many times in test_rollback')
                 time.sleep(1)
                 continue
@@ -247,7 +249,7 @@ class TestSynchronizer(unittest.TestCase):
             self.conn['test']['test'].insert(
                 {'name': 'Paul ' + str(i)}, safe=True)
 
-        while (len(self.solr_conn.search('*:*', rows=NUMBER_OF_DOC_DIRS)) 
+        while (len(self.solr_conn.search('*:*', rows=NUMBER_OF_DOC_DIRS))
                 != NUMBER_OF_DOC_DIRS):
             time.sleep(1)
         primary_conn = Connection(HOSTNAME, int(PORTS_ONE['PRIMARY']))
@@ -272,7 +274,7 @@ class TestSynchronizer(unittest.TestCase):
         while (len(self.solr_conn.search('*:*', rows=NUMBER_OF_DOC_DIRS * 2)) !=
                self.conn['test']['test'].find().count()):
             time.sleep(1)
-        result_set_1 = self.solr_conn.search('Pauline', 
+        result_set_1 = self.solr_conn.search('Pauline',
             rows=NUMBER_OF_DOC_DIRS * 2, sort='_id asc')
         for item in result_set_1:
             result_set_2 = self.conn['test']['test'].find_one(
@@ -295,7 +297,7 @@ class TestSynchronizer(unittest.TestCase):
         result_set_1 = self.solr_conn.search('Pauline',
             rows=NUMBER_OF_DOC_DIRS * 2)
         self.assertEqual(len(result_set_1), 0)
-        result_set_2 = self.solr_conn.search('Paul', 
+        result_set_2 = self.solr_conn.search('Paul',
             rows=NUMBER_OF_DOC_DIRS * 2)
         self.assertEqual(len(result_set_2), NUMBER_OF_DOC_DIRS)
 

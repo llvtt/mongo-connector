@@ -27,7 +27,7 @@ sys.path[0:0] = [""]
 try:
     from pymongo import MongoClient as Connection
 except ImportError:
-    from pymongo import Connection    
+    from pymongo import Connection
 
 import time
 import unittest
@@ -61,7 +61,7 @@ class TestSynchronizer(unittest.TestCase):
         """ Initializes the cluster
         """
         os.system('rm %s; touch %s' % (CONFIG, CONFIG))
-        use_mongos = True    
+        use_mongos = True
         if PORTS_ONE['MONGOS'] != "27217":
             use_mongos = False
 
@@ -71,7 +71,8 @@ class TestSynchronizer(unittest.TestCase):
                               replicaSet="demo-repl")
             timer = Timer(60, abort_test)
             cls.connector = Connector("%s:%s" % (HOSTNAME, PORTS_ONE["MONGOS"]),
-                CONFIG, None, ['test.test'], '_id', None, None)
+                                      CONFIG, None, ['test.test'],
+                                      ['test.test'], '_id', None, None)
             cls.synchronizer = cls.connector.doc_manager
             timer.start()
             cls.connector.start()
@@ -234,11 +235,11 @@ class TestSynchronizer(unittest.TestCase):
         while count + 1 < NUMBER_OF_DOC_DIRS:
             try:
                 count += 1
-                self.conn['test']['test'].insert({'name': 'Pauline ' 
+                self.conn['test']['test'].insert({'name': 'Pauline '
                     + str(count)}, safe=True)
             except (OperationFailure, AutoReconnect):
                 time.sleep(1)
-        while (len(self.synchronizer._search()) 
+        while (len(self.synchronizer._search())
                 != self.conn['test']['test'].find().count()):
             time.sleep(1)
         result_set_1 = self.synchronizer._search()

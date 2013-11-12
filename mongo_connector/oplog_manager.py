@@ -367,17 +367,23 @@ class OplogThread(threading.Thread):
             return None
 
         target_ts = util.long_to_bson_ts(last_inserted_doc['_ts'])
+        # Try to find an oplog entry dating on/before the last document we committed
         last_oplog_entry = self.oplog.find_one({'ts': {'$lte': target_ts}},
                                                sort=[('$natural',
                                                pymongo.DESCENDING)])
+        # We've fallen off the back of the oplog
         if last_oplog_entry is None:
             return None
 
+        # Timestamp of an operation on/before the last one comitted
         rollback_cutoff_ts = last_oplog_entry['ts']
         start_ts = util.bson_ts_to_long(rollback_cutoff_ts)
+        # Timestamp of the the last document comitted
         end_ts = last_inserted_doc['_ts']
 
         rollback_set = {}   # this is a dictionary of ns:list of docs
+        # Find all documents in-between recent oplog timestamp and
+        # last document comitted
         for doc in self.doc_manager.search(start_ts, end_ts):
             if doc['ns'] in rollback_set:
                 rollback_set[doc['ns']].append(doc)
@@ -389,6 +395,8 @@ class OplogThread(threading.Thread):
             obj_id = bson.objectid.ObjectId
             bson_obj_id_list = [obj_id(doc['_id']) for doc in doc_list]
 
+            # Find all docs in the source database corresponding to the
+            # documents in our range
             to_update = util.retry_until_ok(
                 self.main_connection[database][coll].find,
                 {'_id': {'$in': bson_obj_id_list}})
@@ -401,6 +409,8 @@ class OplogThread(threading.Thread):
             count = 0
             while True:
                 try:
+                    # Put in 'to_index' documents in the source database
+                    # that are also in the target database
                     for doc in to_update:
                         if doc['_id'] in doc_hash:
                             del doc_hash[doc['_id']]
@@ -420,6 +430,7 @@ class OplogThread(threading.Thread):
             #insert the ones from mongo
             for doc in to_index:
                 doc['_ts'] = util.bson_ts_to_long(rollback_cutoff_ts)
+                dest_namespace = self.dest_namespace_set[self.namespace_set.index(namespace)]
                 doc['ns'] = dest_namespace
                 try:
                     self.doc_manager.upsert(doc)
