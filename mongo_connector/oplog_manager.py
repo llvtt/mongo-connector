@@ -275,6 +275,15 @@ class OplogThread(threading.Thread):
             cursor = util.retry_until_ok(target_coll.find)
             long_ts = util.bson_ts_to_long(timestamp)
 
+            # Determine if DocManager supports bulk upserts
+            if hasattr(self.doc_manager, "dump"):
+                def stream_docs():
+                    while self.running:
+                        yield next(cursor)
+                self.doc_manager.dump(stream_docs())
+                self.doc_manager.commit()
+                continue
+
             try:
                 for doc in cursor:
                     # Could spend a long time in this loop

@@ -103,6 +103,26 @@ class DocManager():
         """
         self.auto_commit = False
 
+    def dump(self, docs):
+        """Update or insert documents into Solr in-bulk
+
+        This method should call whatever add/insert/update method exists for
+        the backend engine and add documents in there. The input will
+        be an iterable.
+
+        This method should *not* require the end system to commit changes
+        in order to take advantage of high write throughput.
+
+        You may remove this method if you wish, and upsert() will be
+        called instead of dump().
+
+        """
+        to_insert = (self.clean_doc(d) for d in docs)
+        try:
+            self.solr.add(to_insert, commit=False)
+        except SolrError:
+            logging.error("Could not dump documents into Solr")
+
     def upsert(self, doc):
         """Update or insert a document into Solr
 
