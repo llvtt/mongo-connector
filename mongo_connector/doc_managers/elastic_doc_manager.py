@@ -114,7 +114,7 @@ class DocManager():
                                                  scroll="10m", size=100,
                                                  **kwargs)
             scroll_id = first_response.get("_scroll_id")
-            expected_count = first_response.get("hits",{}).get("total",0)
+            expected_count = first_response.get("hits", {}).get("total", 0)
             results_returned = 0
             while results_returned < expected_count:
                 next_response = self.elastic.scroll(scroll_id=scroll_id,
@@ -135,8 +135,8 @@ class DocManager():
         """
         return self._stream_search(index="_all",
                                    body={"query": {"range": {"_ts": {
-                                       "gte":start_ts,
-                                       "lte":end_ts
+                                       "gte": start_ts,
+                                       "lte": end_ts
                                    }}}})
 
     def _search(self):
