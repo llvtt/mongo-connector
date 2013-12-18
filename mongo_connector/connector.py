@@ -19,7 +19,6 @@
 
 import logging
 import logging.handlers
-import oplog_manager
 import optparse
 import os
 import pymongo
@@ -28,11 +27,11 @@ import shutil
 import sys
 import threading
 import time
-import util
 import imp
-
-from locking_dict import LockingDict
-import errors
+from mongo_connector import oplog_manager
+from mongo_connector.locking_dict import LockingDict
+from mongo_connector import errors
+from mongo_connector import util
 
 try:
     from pymongo import MongoClient as Connection
