@@ -107,15 +107,15 @@ class TestElastic(unittest.TestCase):
         while len(self.connector.shard_set) == 0:
             pass
         self.conn['test']['test'].remove(safe=True)
-        while(len(list(self.elastic_doc._search())) != 0):
-            time.sleep(1)
+        self.wait_for(lambda : sum(1 for _ in self.elastic_doc._search()) == 0)
 
     def wait_for(self, condition, max_tries=60):
         """Wait for a condition to be true up to a maximum number of tries
         """
-        while not condition() and max_tries > 0:
+        while not condition() and max_tries > 1:
             time.sleep(1)
             max_tries -= 1
+        return condition()
 
     def test_shard_length(self):
         """Tests the shard_length to see if the shard set was recognized
@@ -153,8 +153,7 @@ class TestElastic(unittest.TestCase):
         self.wait_for(lambda : sum(1 for _ in self.elastic_doc._search()) == 1)
         self.conn['test']['test'].remove({'name': 'paulie'}, safe=True)
         self.wait_for(lambda : sum(1 for _ in self.elastic_doc._search()) != 1)
-        result_set_1 = list(self.elastic_doc._search())
-        self.assertEqual(len(result_set_1), 0)
+        self.assertEqual(sum(1 for _ in self.elastic_doc._search()), 0)
 
     def test_rollback(self):
         """Tests rollback. We force a rollback by adding a doc, killing the
@@ -240,7 +239,6 @@ class TestElastic(unittest.TestCase):
             in global variable. Strategy for rollback is the same as before.
         """
 
-        self.wait_for(lambda : sum(1 for _ in self.elastic_doc._search()) == 0)
         for i in range(0, NUMBER_OF_DOC_DIRS):
             self.conn['test']['test'].insert({'name': 'Paul ' + str(i)},
                 safe=True)
@@ -278,9 +276,8 @@ class TestElastic(unittest.TestCase):
 
         start_mongo_proc(PORTS_ONE['PRIMARY'], "demo-repl", "/replset1a",
                        "/replset1a.log", None)
-        while primary_conn['admin'].command("isMaster")['ismaster'] is False:
-            time.sleep(1)
-        time.sleep(1)
+        db_admin = primary_conn["admin"]
+        self.wait_for(lambda : db_admin.command("isMaster")['ismaster'])
         start_mongo_proc(PORTS_ONE['SECONDARY'], "demo-repl", "/replset1b",
                        "/replset1b.log", None)
 
@@ -314,13 +311,9 @@ class TestElastic(unittest.TestCase):
         except OperationFailure:
             self.fail("Cannot insert documents into Elastic!")
 
-        for _ in range(1, 60): 
-            if (len(list(self.elastic_doc._search())) == len(docs)):
-                break
-            time.sleep(1)
-        else:
+        search = self.elastic_doc._search
+        if not self.wait_for(lambda : sum(1 for _ in search()) == len(docs)):
             self.fail("Did not get all expected documents")
-
         self.assertIn("dbref", self.elastic_doc.get_last_doc())
 
 def abort_test():
