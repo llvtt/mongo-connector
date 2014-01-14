@@ -35,9 +35,10 @@ except ImportError:
 class OplogThread(threading.Thread):
     """OplogThread gathers the updates for a single oplog.
     """
-    def __init__(self, primary_conn, main_address, oplog_coll, is_sharded,
-                 doc_manager, oplog_progress_dict, namespace_set, auth_key,
-                 auth_username, repl_set=None):
+    def __init__(self, primary_conn, main_address, oplog_coll,
+                 doc_manager, oplog_progress_dict, is_sharded=False,
+                 namespace_set=None, auth_key=None, auth_username=None,
+                 repl_set=None):
         """Initialize the oplog thread.
         """
         super(OplogThread, self).__init__()
@@ -85,7 +86,7 @@ class OplogThread(threading.Thread):
             self.main_connection = Connection(main_address)
         else:
             self.main_connection = Connection(main_address,
-                                                      replicaSet=repl_set)
+                                              replicaSet=repl_set)
             self.oplog = self.main_connection['local']['oplog.rs']
 
         if auth_key is not None:

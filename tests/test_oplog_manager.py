@@ -123,8 +123,8 @@ class TestOplogManager(unittest.TestCase):
                                                 size=1000000)
         namespace_set = ['test.test']
         doc_manager = DocManager()
-        oplog = OplogThread(primary_conn, mongos_addr, oplog_coll, is_sharded,
-                            doc_manager, LockingDict(),
+        oplog = OplogThread(primary_conn, mongos_addr, oplog_coll,
+                            doc_manager, LockingDict(), is_sharded,
                             namespace_set, cls.AUTH_KEY, AUTH_USERNAME,
                             repl_set="demo-repl")
 
@@ -150,8 +150,8 @@ class TestOplogManager(unittest.TestCase):
 
         namespace_set = ['test.test']
         doc_manager = DocManager()
-        oplog = OplogThread(primary_conn, mongos_addr, oplog_coll, is_sharded,
-                            doc_manager, LockingDict(),
+        oplog = OplogThread(primary_conn, mongos_addr, oplog_coll,
+                            doc_manager, LockingDict(), is_sharded,
                             namespace_set, cls.AUTH_KEY, AUTH_USERNAME,
                             repl_set="demo-repl")
         return(oplog, primary_conn, oplog.main_connection, oplog_coll)

@@ -47,8 +47,9 @@ except ImportError:
 class Connector(threading.Thread):
     """Checks the cluster for shards to tail.
     """
-    def __init__(self, address, oplog_checkpoint, target_url, ns_set,
-                 u_key, auth_key, doc_manager=None, auth_username=None):
+    def __init__(self, address="localhost:27017", oplog_checkpoint="config.txt",
+                 target_url=None, ns_set=None, u_key="_id", auth_key=None,
+                 doc_manager=None, auth_username=None):
         if doc_manager is not None:
             doc_manager = imp.load_source('DocManager', doc_manager)
         else:
@@ -231,14 +232,17 @@ class Connector(threading.Thread):
             prim_admin = main_conn.admin
             repl_set = prim_admin.command("replSetGetStatus")['set']
 
-            oplog = oplog_manager.OplogThread(main_conn,
+            oplog = oplog_manager.OplogThread(
+                main_conn,
                 (main_conn.host + ":" + str(main_conn.port)),
                 oplog_coll,
-                False, self.doc_manager,
+                self.doc_manager,
                 self.oplog_progress,
+                False,
                 self.ns_set, self.auth_key,
                 self.auth_username,
-                repl_set=repl_set)
+                repl_set=repl_set
+            )
             self.shard_set[0] = oplog
             logging.info('MongoConnector: Starting connection thread %s' %
                          main_conn)
@@ -285,9 +289,10 @@ class Connector(threading.Thread):
                     shard_conn = Connection(hosts, replicaset=repl_set)
                     oplog_coll = shard_conn['local']['oplog.rs']
                     oplog = oplog_manager.OplogThread(shard_conn, self.address,
-                                                      oplog_coll, True,
+                                                      oplog_coll,
                                                       self.doc_manager,
                                                       self.oplog_progress,
+                                                      True,
                                                       self.ns_set,
                                                       self.auth_key,
                                                       self.auth_username)
