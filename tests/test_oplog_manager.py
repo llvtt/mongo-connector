@@ -336,10 +336,6 @@ class TestOplogManager(unittest.TestCase):
         if not start_cluster():
             self.fail('Cluster could not be started successfully!')
 
-        solr = DocManager()
-        test_oplog.doc_manager = solr
-        solr._delete()          # equivalent to solr.delete(q='*: *')
-
         mongos['test']['test'].remove({})
         mongos['test']['test'].insert( 
              {'_id': ObjectId('4ff74db3f646462b38000001'),
@@ -404,14 +400,15 @@ class TestOplogManager(unittest.TestCase):
                       'ns': 'test.test', 
                       '_id': ObjectId('4ff74db3f646462b38000002')}
 
-        test_oplog.doc_manager.upsert(first_doc)
-        test_oplog.doc_manager.upsert(second_doc)
+        doc_manager = test_oplog.doc_managers[0]
+        doc_manager.upsert(first_doc)
+        doc_manager.upsert(second_doc)
 
         test_oplog.rollback()
-        test_oplog.doc_manager.commit()
-        results = solr._search()
+        doc_manager.commit()
+        results = doc_manager._search()
 
-        assert(len(results) == 1)
+        self.assertEqual(len(results), 1)
 
         self.assertEqual(results[0]['name'], 'paulie')
         self.assertTrue(results[0]['_ts'] <= bson_ts_to_long(cutoff_ts))
