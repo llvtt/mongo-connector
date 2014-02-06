@@ -409,7 +409,7 @@ class OplogThread(threading.Thread):
 
         # Python3 can't do comparisons with None
         last_docs.sort(key=lambda x: x["_ts"] if x else float("-inf"))
-        if last_docs[0] < 0:
+        if last_docs[0] is None:
             return None
 
         target_ts = util.long_to_bson_ts(last_docs[0]['_ts'])
@@ -474,4 +474,4 @@ class OplogThread(threading.Thread):
                     except errors.OperationFailed:
                         logging.error("Unable to insert %s" % (doc))
 
-            return rollback_cutoff_ts
+        return rollback_cutoff_ts

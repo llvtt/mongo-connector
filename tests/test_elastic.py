@@ -53,6 +53,7 @@ HOSTNAME = os.environ.get('HOSTNAME', socket.gethostname())
 PORTS_ONE['MONGOS'] = os.environ.get('MAIN_ADDR', "27217")
 CONFIG = os.environ.get('CONFIG', "config.txt")
 
+
 class TestElastic(unittest.TestCase):
     """ Tests the Elastic instance
     """
@@ -63,22 +64,23 @@ class TestElastic(unittest.TestCase):
         unittest.TestCase.__init__(self)
 
     @classmethod
-    def setUpClass(cls):    
+    def setUpClass(cls):
         """ Starts the cluster
         """
         os.system('rm %s; touch %s' % (CONFIG, CONFIG))
-        cls.elastic_doc = DocManager('localhost:9200', 
-            auto_commit=False)
-        cls.elastic_doc._remove()
+        cls.elastic_doc = DocManager('localhost:9200',
+                                     auto_commit=False)
+        retry_until_ok(cls.elastic_doc._remove)
         cls.flag = start_cluster()
         if cls.flag:
             cls.conn = Connection('%s:%s' % (HOSTNAME, PORTS_ONE['MONGOS']),
-                        replicaSet="demo-repl")
+                                  replicaSet="demo-repl")
 
-        import logging        
+        import logging
         logger = logging.getLogger()
         loglevel = logging.INFO
         logger.setLevel(loglevel)
+
     @classmethod
     def tearDownClass(cls):
         """ Kills cluster instance
@@ -88,8 +90,6 @@ class TestElastic(unittest.TestCase):
     def tearDown(self):
         """ Ends the connector
         """
-        self.connector.doc_manager.auto_commit = False
-        time.sleep(2)
         self.connector.join()
 
     def setUp(self):

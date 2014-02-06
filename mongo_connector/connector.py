@@ -30,6 +30,7 @@ from mongo_connector import errors, util
 from mongo_connector.locking_dict import LockingDict
 from mongo_connector.constants import DEFAULT_BATCH_SIZE
 from mongo_connector.oplog_manager import OplogThread
+from mongo_connector.doc_managers import doc_manager_simulator as simulator
 
 try:
     from pymongo import MongoClient as Connection
@@ -63,7 +64,7 @@ class Connector(threading.Thread):
                         imp.load_source(get_module_name(dm), dm)
                     )
         else:
-            from mongo_connector.doc_managers.doc_manager import DocManager
+            from mongo_connector.doc_managers.doc_manager_simulator import DocManager
 
         super(Connector, self).__init__()
 
@@ -77,7 +78,10 @@ class Connector(threading.Thread):
         self.address = address
 
         #The URLs of each target system, respectively
-        self.target_urls = target_url
+        if type(target_url) == list:
+            self.target_urls = target_url
+        else:
+            self.target_urls = [target_url]
 
         #The set of relevant namespaces to consider
         self.ns_set = ns_set
@@ -113,7 +117,7 @@ class Connector(threading.Thread):
 
             # No doc managers specified, using simulator
             if doc_manager is None:
-                self.doc_managers = [DocManager(**docman_kwargs)]
+                self.doc_managers = [simulator.DocManager(**docman_kwargs)]
             else:
                 self.doc_managers = []
                 for i, d in enumerate(doc_manager_modules):
