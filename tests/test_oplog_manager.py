@@ -56,6 +56,7 @@ PORTS_ONE['MAIN'] = os.environ.get('MAIN_ADDR', "27217")
 CONFIG = os.environ.get('CONFIG', "config.txt")
 TEMP_CONFIG = os.environ.get('TEMP_CONFIG', "temp_config.txt")
 
+
 class TestOplogManager(unittest.TestCase):
     """Defines all the testing methods, as well as a method that sets up the
         cluster
@@ -255,16 +256,15 @@ class TestOplogManager(unittest.TestCase):
         """
 
         test_oplog, primary_conn, search_ts = self.get_oplog_thread()
-        solr = DocManager()
-        test_oplog.doc_manager = solr
 
         #with documents
         primary_conn['test']['test'].insert({'name': 'paulie'})
         search_ts = test_oplog.get_last_oplog_timestamp()
         test_oplog.dump_collection()
 
-        test_oplog.doc_manager.commit()
-        solr_results = solr._search()
+        doc_manager = test_oplog.doc_managers[0]
+        doc_manager.commit()
+        solr_results = doc_manager._search()
         self.assertEqual(len(solr_results), 1)
         solr_doc = solr_results[0]
         self.assertEqual(long_to_bson_ts(solr_doc['_ts']), search_ts)
@@ -305,12 +305,11 @@ class TestOplogManager(unittest.TestCase):
         # test init_cursor when OplogThread created with/without no-dump option
         # insert some documents (will need to be dumped)
         primary_conn['test']['test'].remove()
-        primary_conn['test']['test'].insert(({"_id":i} for i in range(100)))
+        primary_conn['test']['test'].insert(({"_id": i} for i in range(100)))
 
         # test no-dump option
-        docman = DocManager()
+        docman = test_oplog.doc_managers[0]
         docman._delete()
-        test_oplog.doc_manager = docman
         test_oplog.collection_dump = False
         test_oplog.oplog_progress = LockingDict()
         # init_cursor has the side-effect of causing a collection dump
@@ -417,7 +416,7 @@ class TestOplogManager(unittest.TestCase):
 
     def test_filter_fields(self):
         opman, _, _ = self.get_oplog_thread()
-        docman = opman.doc_manager
+        docman = opman.doc_managers[0]
         conn = opman.main_connection
 
         include_fields = ["a", "b", "c"]
@@ -441,6 +440,43 @@ class TestOplogManager(unittest.TestCase):
         for inc, exc in zip(include_fields, exclude_fields):
             self.assertIn(inc, keys)
             self.assertNotIn(exc, keys)
+
+    def test_many_targets(self):
+        """Test that one OplogThread is capable of replicating to more than
+        one target.
+        """
+
+        opman, primary_conn, oplog_coll = self.get_oplog_thread()
+        doc_managers = [DocManager(), DocManager(), DocManager()]
+        opman.doc_managers = doc_managers
+
+        # start replicating
+        opman.start()
+        primary_conn["test"]["test"].insert({
+            "name": "kermit",
+            "color": "green"
+        })
+        primary_conn["test"]["test"].insert({
+            "name": "elmo",
+            "color": "firetruck red"
+        })
+
+        self.assertTrue(
+            wait_for(lambda: sum(len(d._search()) for d in doc_managers) == 6),
+            "OplogThread should be able to replicate to multiple targets"
+        )
+
+        primary_conn["test"]["test"].remove({"name": "elmo"})
+
+        self.assertTrue(
+            wait_for(lambda: sum(len(d._search()) for d in doc_managers) == 3),
+            "OplogThread should be able to replicate to multiple targets"
+        )
+        for d in doc_managers:
+            self.assertEqual(d._search()[0]["name"], "kermit")
+
+        # cleanup
+        opman.join()
 
 if __name__ == '__main__':
     unittest.main()
