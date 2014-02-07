@@ -46,9 +46,6 @@ class Connector(threading.Thread):
                  collection_dump=True, batch_size=DEFAULT_BATCH_SIZE,
                  fields=None):
 
-        logger = logging.getLogger()
-        logger.setLevel(logging.ERROR)
-
         if target_url and not doc_manager:
             raise errors.ConnectorError("Cannot create a Connector with a "
                                         "target URL but no doc manager!")
