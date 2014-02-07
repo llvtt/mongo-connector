@@ -46,6 +46,13 @@ class Connector(threading.Thread):
                  collection_dump=True, batch_size=DEFAULT_BATCH_SIZE,
                  fields=None):
 
+        logger = logging.getLogger()
+        logger.setLevel(logging.ERROR)
+
+        if target_url and not doc_manager:
+            raise errors.ConnectorError("Cannot create a Connector with a "
+                                        "target URL but no doc manager!")
+
         doc_manager_modules = None
         if doc_manager is not None:
             def get_module_name(path):
@@ -63,8 +70,6 @@ class Connector(threading.Thread):
                     doc_manager_modules.append(
                         imp.load_source(get_module_name(dm), dm)
                     )
-        else:
-            from mongo_connector.doc_managers.doc_manager_simulator import DocManager
 
         super(Connector, self).__init__()
 
@@ -123,7 +128,7 @@ class Connector(threading.Thread):
                 for i, d in enumerate(doc_manager_modules):
                     # self.target_urls may be shorter than
                     # self.doc_managers, or left as None
-                    if self.target_urls and i <= len(self.target_urls):
+                    if self.target_urls and i < len(self.target_urls):
                         target_url = self.target_urls[i]
                     else:
                         target_url = None
@@ -135,6 +140,12 @@ class Connector(threading.Thread):
                     else:
                         self.doc_managers.append(
                             d.DocManager(**docman_kwargs))
+                # If more target URLs were given than doc managers, may need
+                # to create additional doc managers
+                for url in self.target_urls[i+1:]:
+                    self.doc_managers.append(
+                        doc_manager_modules[-1].DocManager(url,
+                                                           **docman_kwargs))
         except errors.ConnectionFailed:
             err_msg = "MongoConnector: Could not connect to target system"
             logging.critical(err_msg)
@@ -415,16 +426,22 @@ def main():
                       "of falling behind the earliest timestamp in the oplog")
 
     #-t is to specify the URL to the target system being used.
-    parser.add_option("-t", "--target-url", "--target-urls",
-                      action="store", type="string",
-                      dest="urls", default=None,
-                      help="""Specify the URL to each target system being
-                       used. For example, if you were using Solr out of
-                       the box, you could use '-t
-                       http://localhost:8080/solr' with the
-                       SolrDocManager to establish a proper connection.
-                       Don't use quotes around addresses.
-                       If target system doesn't need URL, don't specify""")
+    parser.add_option("-t", "--target-urls", action="store", type="string",
+                      dest="urls", default=None, help=
+                      """Specify the URL to each target system being """
+                      """used. For example, if you were using Solr out of """
+                      """the box, you could use '-t """
+                      """http://localhost:8080/solr' with the """
+                      """SolrDocManager to establish a proper connection. """
+                      """URLs should be specified in the same order as """
+                      """their respective doc managers in the """
+                      """--doc-managers option.  URLs are assigned to doc """
+                      """managers respectively. Additional doc managers """
+                      """are implied to have no target URL. Additional """
+                      """URLs are implied to have the same doc manager """
+                      """type as the last doc manager for which a URL was """
+                      """specified. """
+                      """Don't use quotes around addresses. """)
 
     #-n is to specify the namespaces we want to consider. The default
     #considers all the namespaces
@@ -471,26 +488,31 @@ def main():
     #-a is to specify the username for authentication.
     parser.add_option("-a", "--admin-username", action="store", type="string",
                       dest="admin_name", default="__system", help=
-                      """Used to specify the username of an admin user to"""
-                      """authenticate with. To use authentication, the user"""
-                      """must specify both an admin username and a keyFile."""
+                      """Used to specify the username of an admin user to """
+                      """authenticate with. To use authentication, the user """
+                      """must specify both an admin username and a keyFile. """
                       """The default username is '__system'""")
 
     #-d is to specify the doc manager file.
-    parser.add_option("-d", "--docManager", "--doc-managers",
-                      action="store", type="string",
-                      dest="doc_managers", default=None,
-                      help="""Used to specify the path to each doc manager
-                       file that will be used. DocManagers should be
-                       specified in the same order as their respective
-                       target addresses in the --target-urls option. By
-                       default, Mongo Connector will use
-                       'doc_manager_simulator.py'.  It is recommended
-                       that all doc manager files be kept in the
-                       doc_managers folder in mongo-connector. For
-                       more information about making your own doc
-                       manager, see 'Writing Your Own DocManager'
-                       section of the wiki""")
+    parser.add_option("-d", "--doc-managers", action="store", type="string",
+                      dest="doc_managers", default=None, help=
+                      """Used to specify the path to each doc manager """
+                      """file that will be used. DocManagers should be """
+                      """specified in the same order as their respective """
+                      """target addresses in the --target-urls option. """
+                      """URLs are assigned to doc managers """
+                      """respectively. Additional doc managers are """
+                      """implied to have no target URL. Additional URLs """
+                      """are implied to have the same doc manager type as """
+                      """the last doc manager for which a URL was """
+                      """specified. By """
+                      """default, Mongo Connector will use """
+                      """'doc_manager_simulator.py'.  It is recommended """
+                      """that all doc manager files be kept in the """
+                      """doc_managers folder in mongo-connector. For """
+                      """more information about making your own doc """
+                      """manager, see 'Writing Your Own DocManager' """
+                      """section of the wiki""")
 
     #-s is to enable syslog logging.
     parser.add_option("-s", "--enable-syslog", action="store_true",
@@ -545,12 +567,6 @@ def main():
     doc_managers = options.doc_managers
     doc_managers = doc_managers.split(",") if doc_managers else doc_managers
     target_urls = options.urls.split(",") if options.urls else None
-    if target_urls and not doc_managers:
-        logger.error("Cannot specify a target URL without a DocManager")
-        sys.exit(1)
-    if target_urls and doc_managers and len(target_urls) > len(doc_managers):
-        logger.error("Cannot specify more target URLs than DocManagers")
-        sys.exit(1)
 
     if options.doc_manager is None:
         logger.info('No doc managers specified, using simulator.')

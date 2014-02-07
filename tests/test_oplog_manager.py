@@ -271,6 +271,16 @@ class TestOplogManager(unittest.TestCase):
         self.assertEqual(solr_doc['name'], 'paulie')
         self.assertEqual(solr_doc['ns'], 'test.test')
 
+        # test multiple targets
+        doc_managers = [DocManager(), DocManager(), DocManager()]
+        test_oplog.doc_managers = doc_managers
+        primary_conn["test"]["test"].remove()
+        for i in range(1000):
+            primary_conn["test"]["test"].insert({"i": i})
+        test_oplog.dump_collection()
+        for dm in doc_managers:
+            self.assertEqual(len(dm._search()), 1000)
+
     def test_init_cursor(self):
         """Test init_cursor in oplog_manager. Assertion failure if it
             doesn't pass

@@ -18,11 +18,11 @@
 import bson
 import logging
 import pymongo
-import sys
 import time
 import threading
 from mongo_connector import errors, util
 from mongo_connector.constants import DEFAULT_BATCH_SIZE
+from mongo_connector.util import retry_until_ok
 
 try:
     from pymongo import MongoClient as Connection
@@ -319,11 +319,22 @@ class OplogThread(threading.Thread):
                     doc["_ts"] = long_ts
                     yield doc
 
+        dumping_threads = []
         for dm in self.doc_managers:
             try:
                 # Bulk upsert if possible
                 if hasattr(dm, "bulk_upsert"):
-                    dm.bulk_upsert(docs_to_dump())
+                    # Slight performance gain breaking dump into separate
+                    # threads, only if > 1 repliation target
+                    if len(self.doc_managers) == 1:
+                        dm.bulk_upsert(docs_to_dump())
+                    else:
+                        def do_dump():
+                            all_docs = docs_to_dump()
+                            dm.bulk_upsert(all_docs)
+                        t = threading.Thread(target=do_dump)
+                        dumping_threads.append(t)
+                        t.start()
                 else:
                     for doc in docs_to_dump():
                         try:
@@ -337,6 +348,10 @@ class OplogThread(threading.Thread):
                 logging.error('%s %s %s' % (err_msg, effect, self.oplog))
                 self.running = False
                 return None
+
+        # cleanup
+        for t in dumping_threads:
+            t.join()
 
         return timestamp
 
@@ -402,35 +417,50 @@ class OplogThread(threading.Thread):
         timestamp. This defines the rollback window and we just roll these
         back until the oplog and target system are in consistent states.
         """
+        # Find the most recently inserted document in each target system
         last_docs = []
         for dm in self.doc_managers:
             dm.commit()
             last_docs.append(dm.get_last_doc())
 
-        # Python3 can't do comparisons with None
-        last_docs.sort(key=lambda x: x["_ts"] if x else float("-inf"))
-        if last_docs[0] is None:
+        # Of these documents, which is the most recent?
+        last_doc = max(last_docs,
+                       key=lambda x: x["_ts"] if x else float("-inf"))
+
+        # Nothing has been replicated. No need to rollback target systems
+        if last_doc is None:
             return None
 
-        target_ts = util.long_to_bson_ts(last_docs[0]['_ts'])
+        # Find the oplog entry that touched the most recent document.
+        # We'll use this to figure where to pick up the oplog later.
+        target_ts = util.long_to_bson_ts(last_doc['_ts'])
         last_oplog_entry = self.oplog.find_one({'ts': {'$lte': target_ts}},
                                                sort=[('$natural',
                                                       pymongo.DESCENDING)])
+
+        # The oplog entry for the most recent document doesn't exist anymore.
+        # If we've fallen behind in the oplog, this will be caught later
         if last_oplog_entry is None:
             return None
 
+        # rollback_cutoff_ts happened *before* the rollback
         rollback_cutoff_ts = last_oplog_entry['ts']
         start_ts = util.bson_ts_to_long(rollback_cutoff_ts)
+        # timestamp of the most recent document on any target system
         end_ts = last_docs[-1]['_ts']
 
         for dm in self.doc_managers:
             rollback_set = {}   # this is a dictionary of ns:list of docs
+
+            # group potentially conflicted documents by namespace
             for doc in dm.search(start_ts, end_ts):
                 if doc['ns'] in rollback_set:
                     rollback_set[doc['ns']].append(doc)
                 else:
                     rollback_set[doc['ns']] = [doc]
 
+            # retrieve these documents from MongoDB, either updating
+            # or removing them in each target system
             for namespace, doc_list in rollback_set.items():
                 database, coll = namespace.split('.', 1)
                 obj_id = bson.objectid.ObjectId
@@ -446,20 +476,13 @@ class OplogThread(threading.Thread):
                     doc_hash[bson.objectid.ObjectId(doc['_id'])] = doc
 
                 to_index = []
-                count = 0
-                while True:
-                    try:
-                        for doc in to_update:
-                            if doc['_id'] in doc_hash:
-                                del doc_hash[doc['_id']]
-                                to_index.append(doc)
-                        break
-                    except (pymongo.errors.OperationFailure,
-                            pymongo.errors.AutoReconnect):
-                        count += 1
-                        if count > 60:
-                            sys.exit(1)
-                        time.sleep(1)
+
+                def collect_existing_docs():
+                    for doc in to_update:
+                        if doc['_id'] in doc_hash:
+                            del doc_hash[doc['_id']]
+                            to_index.append(doc)
+                retry_until_ok(collect_existing_docs)
 
                 #delete the inconsistent documents
                 for doc in doc_hash.values():
