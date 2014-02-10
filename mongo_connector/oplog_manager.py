@@ -148,23 +148,33 @@ class OplogThread(threading.Thread):
                             continue
 
                         #delete
-                        if operation == 'd':
-                            entry['_id'] = entry['o']['_id']
-                            for dm in self.doc_managers:
-                                dm.remove(entry)
-                        #insert/update. They are equal because of lack
-                        #of support for partial update
-                        elif operation == 'i' or operation == 'u':
-                            doc = self.retrieve_doc(entry)
-                            if doc is not None:
-                                doc['_ts'] = util.bson_ts_to_long(entry['ts'])
-                                doc['ns'] = ns
+                        try:
+                            if operation == 'd':
+                                entry['_id'] = entry['o']['_id']
                                 for dm in self.doc_managers:
-                                    try:
+                                    dm.remove(entry)
+                            #insert/update. They are equal because of lack
+                            #of support for partial update
+                            elif operation == 'i' or operation == 'u':
+                                doc = self.retrieve_doc(entry)
+                                if doc is not None:
+                                    doc['_ts'] = util.bson_ts_to_long(
+                                        entry['ts'])
+                                    doc['ns'] = ns
+                                    for dm in self.doc_managers:
                                         dm.upsert(self.filter_fields(doc))
-                                    except errors.OperationFailed:
-                                        logging.error(
-                                            "Unable to insert %s" % (doc))
+                        except errors.OperationFailed:
+                            logging.error(
+                                "Unable to %d %s" % (
+                                    "delete" if operation == "d" else "upsert",
+                                    str(doc)
+                                ))
+                        except errors.ConnectionFailed:
+                            logging.error(
+                                "Network error while trying to %s %s" % (
+                                    "delete" if operation == "d" else "upsert",
+                                    str(doc)
+                                ))
 
                         last_ts = entry['ts']
 

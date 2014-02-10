@@ -334,7 +334,6 @@ class Connector(threading.Thread):
                         self.oplog_thread_join()
                         for dm in self.doc_managers():
                             dm.stop()
-                        self.doc_manager.stop()
                         return
 
                     shard_conn = Connection(hosts, replicaset=repl_set)
