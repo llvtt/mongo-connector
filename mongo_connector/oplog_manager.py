@@ -310,22 +310,43 @@ class OplogThread(threading.Thread):
             for namespace in dump_set:
                 logging.info("dumping collection %s" % namespace)
                 database, coll = namespace.split('.', 1)
-                target_coll = self.main_connection[database][coll]
-                cursor = util.retry_until_ok(target_coll.find)
-                for doc in cursor:
-                    if not self.running:
-                        raise StopIteration
-                    doc["ns"] = namespace
-                    doc["_ts"] = long_ts
-                    yield doc
+                last_id = None
+                attempts = 0
+
+                # Loop to handle possible AutoReconnect
+                while attempts < 60:
+                    target_coll = self.main_connection[database][coll]
+                    if not last_id:
+                        cursor = util.retry_until_ok(
+                            target_coll.find,
+                            sort=[("_id", pymongo.ASCENDING)]
+                        )
+                    else:
+                        cursor = util.retry_until_ok(
+                            target_coll.find,
+                            {"_id": {"$gt": last_id}},
+                            sort=[("_id", pymongo.ASCENDING)]
+                        )
+                    try:
+                        for doc in cursor:
+                            if not self.running:
+                                raise StopIteration
+                            doc["ns"] = namespace
+                            doc["_ts"] = long_ts
+                            last_id = doc["_id"]
+                            yield doc
+                        break
+                    except pymongo.errors.AutoReconnect:
+                        attempts += 1
+                        time.sleep(1)
 
         dumping_threads = []
-        for dm in self.doc_managers:
-            try:
+        try:
+            for dm in self.doc_managers:
                 # Bulk upsert if possible
                 if hasattr(dm, "bulk_upsert"):
                     # Slight performance gain breaking dump into separate
-                    # threads, only if > 1 repliation target
+                    # threads, only if > 1 replication target
                     if len(self.doc_managers) == 1:
                         dm.bulk_upsert(docs_to_dump())
                     else:
@@ -341,17 +362,17 @@ class OplogThread(threading.Thread):
                             dm.upsert(self.filter_fields(doc))
                         except errors.OperationFailed:
                             logging.error("Unable to insert %s" % doc)
-            except (pymongo.errors.AutoReconnect,
-                    pymongo.errors.OperationFailure):
-                err_msg = "OplogManager: Failed during dump collection"
-                effect = "cannot recover!"
-                logging.error('%s %s %s' % (err_msg, effect, self.oplog))
-                self.running = False
-                return None
 
-        # cleanup
-        for t in dumping_threads:
-            t.join()
+            # cleanup
+            for t in dumping_threads:
+                t.join()
+
+        except (pymongo.errors.OperationFailure):
+            err_msg = "OplogManager: Failed during dump collection"
+            effect = "cannot recover!"
+            logging.error('%s %s %s' % (err_msg, effect, self.oplog))
+            self.running = False
+            return None
 
         return timestamp
 
@@ -447,7 +468,7 @@ class OplogThread(threading.Thread):
         rollback_cutoff_ts = last_oplog_entry['ts']
         start_ts = util.bson_ts_to_long(rollback_cutoff_ts)
         # timestamp of the most recent document on any target system
-        end_ts = last_docs[-1]['_ts']
+        end_ts = last_doc['_ts']
 
         for dm in self.doc_managers:
             rollback_set = {}   # this is a dictionary of ns:list of docs

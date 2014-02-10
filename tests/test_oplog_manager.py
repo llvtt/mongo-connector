@@ -51,7 +51,7 @@ PORTS_ONE = {"PRIMARY":  "27117", "SECONDARY":  "27118", "ARBITER":  "27119",
 
 AUTH_FILE = os.environ.get('AUTH_FILE', None)
 AUTH_USERNAME = os.environ.get('AUTH_USERNAME', None)
-HOSTNAME = os.environ.get('HOSTNAME', socket.gethostname())
+HOSTNAME = os.environ.get('HOSTNAME', "localhost")
 PORTS_ONE['MAIN'] = os.environ.get('MAIN_ADDR', "27217")
 CONFIG = os.environ.get('CONFIG', "config.txt")
 TEMP_CONFIG = os.environ.get('TEMP_CONFIG', "temp_config.txt")

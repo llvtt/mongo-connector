@@ -565,7 +565,7 @@ def main():
     doc_managers = doc_managers.split(",") if doc_managers else doc_managers
     target_urls = options.urls.split(",") if options.urls else None
 
-    if options.doc_manager is None:
+    if options.doc_managers is None:
         logger.info('No doc managers specified, using simulator.')
 
     if options.ns_set is None:
