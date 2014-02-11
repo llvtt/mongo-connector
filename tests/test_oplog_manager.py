@@ -17,34 +17,23 @@
 
 import os
 import sys
-import inspect
-import time
 if sys.version_info[:2] == (2, 6):
     import unittest2 as unittest
 else:
     import unittest
 import re
-import socket
 try:
     from pymongo import MongoClient as Connection
 except ImportError:
-    from pymongo import Connection    
-
-sys.path[0:0] = [""]
+    from pymongo import Connection
 
 from mongo_connector.doc_managers.doc_manager_simulator import DocManager
 from mongo_connector.locking_dict import LockingDict
-from tests.setup_cluster import (kill_mongo_proc,
-                                          start_mongo_proc,
-                                          start_cluster,
-                                          kill_all)
+from mongo_connector.util import long_to_bson_ts
+from tests.setup_cluster import (start_cluster,
+                                 kill_all)
 from tests.util import wait_for
-from pymongo.errors import OperationFailure
 from mongo_connector.oplog_manager import OplogThread
-from mongo_connector.util import(long_to_bson_ts,
-                                 bson_ts_to_long,
-                                 retry_until_ok)
-from bson.objectid import ObjectId
 
 PORTS_ONE = {"PRIMARY":  "27117", "SECONDARY":  "27118", "ARBITER":  "27119",
              "CONFIG":  "27220", "MAIN":  "27217"}
@@ -332,97 +321,6 @@ class TestOplogManager(unittest.TestCase):
         test_oplog.oplog_progress = LockingDict()
         test_oplog.init_cursor()
         self.assertEqual(len(docman._search()), 100)
-
-    def test_rollback(self):
-        """Test rollback in oplog_manager. Assertion failure if it doesn't pass
-            We force a rollback by inserting a doc, killing the primary,
-            inserting another doc, killing the new primary, and then restarting
-            both.
-        """
-        os.system('rm config.txt; touch config.txt')
-        test_oplog, primary_conn, mongos, solr = self.get_new_oplog()
-
-        if not start_cluster():
-            self.fail('Cluster could not be started successfully!')
-
-        mongos['test']['test'].remove({})
-        mongos['test']['test'].insert( 
-             {'_id': ObjectId('4ff74db3f646462b38000001'),
-             'name': 'paulie'},
-             safe=True
-             )
-        while (mongos['test']['test'].find().count() != 1):
-            time.sleep(1)
-        cutoff_ts = test_oplog.get_last_oplog_timestamp()
-
-        first_doc = {'name': 'paulie', '_ts': bson_ts_to_long(cutoff_ts),
-                     'ns': 'test.test',
-                     '_id':  ObjectId('4ff74db3f646462b38000001')}
-
-        #try kill one, try restarting
-        kill_mongo_proc(primary_conn.host, PORTS_ONE['PRIMARY'])
-
-        new_primary_conn = Connection(HOSTNAME, int(PORTS_ONE['SECONDARY']))
-        admin = new_primary_conn['admin']
-        while admin.command("isMaster")['ismaster'] is False:
-            time.sleep(1)
-        time.sleep(5)
-        count = 0
-        while True:
-            try:
-                mongos['test']['test'].insert({
-                    '_id': ObjectId('4ff74db3f646462b38000002'),
-                    'name': 'paul'}, 
-                    safe=True)
-                break
-            except OperationFailure:
-                count += 1
-                if count > 60:
-                    self.fail('Call to insert doc failed too many times')
-                time.sleep(1)
-                continue
-        while (mongos['test']['test'].find().count() != 2):
-            time.sleep(1)
-        kill_mongo_proc(primary_conn.host, PORTS_ONE['SECONDARY'])
-        start_mongo_proc(PORTS_ONE['PRIMARY'], "demo-repl", "/replset1a",
-                       "/replset1a.log", None)
-
-        #wait for master to be established
-        while primary_conn['admin'].command("isMaster")['ismaster'] is False:
-            time.sleep(1)
-
-        start_mongo_proc(PORTS_ONE['SECONDARY'], "demo-repl", "/replset1b",
-                       "/replset1b.log", None)
-
-        #wait for secondary to be established
-        admin = new_primary_conn['admin']
-        while admin.command("replSetGetStatus")['myState'] != 2:
-            time.sleep(1)
-        while retry_until_ok(mongos['test']['test'].find().count) != 1:
-            time.sleep(1)
-
-        self.assertEqual(str(new_primary_conn.port), PORTS_ONE['SECONDARY'])
-        self.assertEqual(str(primary_conn.port), PORTS_ONE['PRIMARY'])
-
-        last_ts = test_oplog.get_last_oplog_timestamp()
-        second_doc = {'name': 'paul', '_ts': bson_ts_to_long(last_ts),
-                      'ns': 'test.test', 
-                      '_id': ObjectId('4ff74db3f646462b38000002')}
-
-        doc_manager = test_oplog.doc_managers[0]
-        doc_manager.upsert(first_doc)
-        doc_manager.upsert(second_doc)
-
-        test_oplog.rollback()
-        doc_manager.commit()
-        results = doc_manager._search()
-
-        self.assertEqual(len(results), 1)
-
-        self.assertEqual(results[0]['name'], 'paulie')
-        self.assertTrue(results[0]['_ts'] <= bson_ts_to_long(cutoff_ts))
-
-        #test_oplog.join()
 
     def test_filter_fields(self):
         opman, _, _ = self.get_oplog_thread()
