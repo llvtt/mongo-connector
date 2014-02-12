@@ -80,10 +80,17 @@ class Connector(threading.Thread):
         self.address = address
 
         #The URLs of each target system, respectively
-        if type(target_url) == list:
-            self.target_urls = target_url
-        else:
+        def is_string(s):
+            try:
+                return isinstance(s, basestring)
+            except NameError:
+                return isinstance(s, str)
+        if is_string(target_url):
             self.target_urls = [target_url]
+        elif target_url:
+            self.target_urls = list(target_url)
+        else:
+            self.target_urls = None
 
         #The set of relevant namespaces to consider
         self.ns_set = ns_set
