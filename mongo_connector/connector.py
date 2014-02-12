@@ -432,8 +432,8 @@ def main():
                       "of falling behind the earliest timestamp in the oplog")
 
     #-t is to specify the URL to the target system being used.
-    parser.add_option("-t", "--target-urls", action="store", type="string",
-                      dest="urls", default=None, help=
+    parser.add_option("-t", "--target-url", "--target-urls", action="store",
+                      type="string", dest="urls", default=None, help=
                       """Specify the URL to each target system being """
                       """used. For example, if you were using Solr out of """
                       """the box, you could use '-t """
@@ -500,8 +500,8 @@ def main():
                       """The default username is '__system'""")
 
     #-d is to specify the doc manager file.
-    parser.add_option("-d", "--doc-managers", action="store", type="string",
-                      dest="doc_managers", default=None, help=
+    parser.add_option("-d", "--docManager", "--doc-managers", action="store",
+                      type="string", dest="doc_managers", default=None, help=
                       """Used to specify the path to each doc manager """
                       """file that will be used. DocManagers should be """
                       """specified in the same order as their respective """
@@ -511,8 +511,7 @@ def main():
                       """implied to have no target URL. Additional URLs """
                       """are implied to have the same doc manager type as """
                       """the last doc manager for which a URL was """
-                      """specified. By """
-                      """default, Mongo Connector will use """
+                      """specified. By default, Mongo Connector will use """
                       """'doc_manager_simulator.py'.  It is recommended """
                       """that all doc manager files be kept in the """
                       """doc_managers folder in mongo-connector. For """
