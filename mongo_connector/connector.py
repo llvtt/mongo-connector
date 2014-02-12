@@ -50,13 +50,19 @@ class Connector(threading.Thread):
             raise errors.ConnectorError("Cannot create a Connector with a "
                                         "target URL but no doc manager!")
 
+        def is_string(s):
+            try:
+                return isinstance(s, basestring)
+            except NameError:
+                return isinstance(s, str)
+
         doc_manager_modules = None
         if doc_manager is not None:
             def get_module_name(path):
                 name, _ = os.path.splitext(os.path.basename(path))
                 return name
             # backwards compatilibity: doc_manager may be a string
-            if type(doc_manager) == str:
+            if is_string(doc_manager):
                 doc_manager_modules = [
                     imp.load_source(get_module_name(doc_manager), doc_manager)
                 ]
@@ -80,11 +86,6 @@ class Connector(threading.Thread):
         self.address = address
 
         #The URLs of each target system, respectively
-        def is_string(s):
-            try:
-                return isinstance(s, basestring)
-            except NameError:
-                return isinstance(s, str)
         if is_string(target_url):
             self.target_urls = [target_url]
         elif target_url:
