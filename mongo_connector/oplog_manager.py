@@ -17,9 +17,15 @@
 
 import bson
 import logging
+try:
+    import Queue as queue
+except ImportError:
+    import queue
 import pymongo
+import sys
 import time
 import threading
+import traceback
 from mongo_connector import errors, util
 from mongo_connector.constants import DEFAULT_BATCH_SIZE
 from mongo_connector.util import retry_until_ok
@@ -350,7 +356,12 @@ class OplogThread(threading.Thread):
                         attempts += 1
                         time.sleep(1)
 
+        # Extra threads (if any) that assist with collection dumps
         dumping_threads = []
+        # Did the dump succeed for all target systems?
+        dump_success = True
+        # Holds any exceptions we can't recover from
+        errors = queue.Queue()
         try:
             for dm in self.doc_managers:
                 # Bulk upsert if possible
@@ -360,24 +371,42 @@ class OplogThread(threading.Thread):
                     if len(self.doc_managers) == 1:
                         dm.bulk_upsert(docs_to_dump())
                     else:
-                        def do_dump():
+                        def do_dump(error_queue):
                             all_docs = docs_to_dump()
-                            dm.bulk_upsert(all_docs)
-                        t = threading.Thread(target=do_dump)
+                            try:
+                                dm.bulk_upsert(all_docs)
+                            except Exception:
+                                # Likely exceptions:
+                                # pymongo.errors.OperationFailure,
+                                # mongo_connector.errors.ConnectionFailed
+                                # mongo_connector.errors.OperationFailed
+                                error_queue.put(sys.exc_info())
+
+                        t = threading.Thread(target=do_dump, args=(errors,))
                         dumping_threads.append(t)
                         t.start()
                 else:
                     for doc in docs_to_dump():
-                        try:
-                            dm.upsert(self.filter_fields(doc))
-                        except errors.OperationFailed:
-                            logging.error("Unable to insert %s" % doc)
+                        dm.upsert(self.filter_fields(doc))
 
             # cleanup
             for t in dumping_threads:
                 t.join()
 
-        except (pymongo.errors.OperationFailure):
+        except Exception:
+            # See "likely exceptions" comment above
+            errors.put(sys.exc_info())
+
+        # Print caught exceptions
+        try:
+            while True:
+                klass, value, trace = errors.get_nowait()
+                dump_success = False
+                traceback.print_exception(klass, value, trace)
+        except queue.Empty:
+            pass
+
+        if not dump_success:
             err_msg = "OplogManager: Failed during dump collection"
             effect = "cannot recover!"
             logging.error('%s %s %s' % (err_msg, effect, self.oplog))
