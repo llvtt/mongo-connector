@@ -25,7 +25,6 @@ import shutil
 import sys
 import threading
 import time
-import imp
 from mongo_connector import errors, util
 from mongo_connector.locking_dict import LockingDict
 from mongo_connector.constants import DEFAULT_BATCH_SIZE
@@ -55,24 +54,27 @@ class Connector(threading.Thread):
                 return isinstance(s, basestring)
             except NameError:
                 return isinstance(s, str)
+        def load_doc_manager(path):
+            name, _ = os.path.splitext(os.path.basename(path))
+            try:
+                import importlib.machinery
+                loader = importlib.machinery.SourceFileLoader(name, path)
+                module = loader.load_module(name)
+            except ImportError:
+                import imp
+                module = imp.load_source(name, path)
+            return module
 
         doc_manager_modules = None
         if doc_manager is not None:
-            def get_module_name(path):
-                name, _ = os.path.splitext(os.path.basename(path))
-                return name
             # backwards compatilibity: doc_manager may be a string
             if is_string(doc_manager):
-                doc_manager_modules = [
-                    imp.load_source(get_module_name(doc_manager), doc_manager)
-                ]
+                doc_manager_modules = [load_doc_manager(doc_manager)]
             # doc_manager is a list
             else:
                 doc_manager_modules = []
                 for dm in doc_manager:
-                    doc_manager_modules.append(
-                        imp.load_source(get_module_name(dm), dm)
-                    )
+                    doc_manager_modules.append(load_doc_manager(dm))
 
         super(Connector, self).__init__()
 
