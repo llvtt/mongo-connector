@@ -27,13 +27,14 @@ import bson.json_util as bsjson
 from pysolr import Solr, SolrError
 from mongo_connector import errors
 from mongo_connector.constants import DEFAULT_COMMIT_INTERVAL
+from mongo_connector.doc_managers import DocManagerBase
 from mongo_connector.util import retry_until_ok
 ADMIN_URL = 'admin/luke?show=schema&wt=json'
 
 decoder = json.JSONDecoder()
 
 
-class DocManager():
+class DocManager(DocManagerBase):
     """The DocManager class creates a connection to the backend engine and
     adds/removes documents, and in the case of rollback, searches for them.
 
@@ -149,6 +150,19 @@ class DocManager():
         """ Stops the instance
         """
         pass
+
+    def update(self, doc, update_spec):
+        """Apply updates given in update_spec to the document whose id
+        matches that of doc.
+
+        """
+        query = "%s:%s" % (self.unique_key, str(doc['_id']))
+        results = self.solr.search(query)
+        # Results is a lazy iterable containing only 1 result
+        for doc in results:
+            updated = self.apply_update(doc, update_spec)
+            self.upsert(updated)
+        return updated
 
     def upsert(self, doc):
         """Update or insert a document into Solr

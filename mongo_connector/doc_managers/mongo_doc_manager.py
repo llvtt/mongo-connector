@@ -23,9 +23,11 @@
 
 import pymongo
 from mongo_connector import errors
+from mongo_connector.doc_managers import DocManagerBase
 from bson.errors import InvalidDocument
 
-class DocManager():
+
+class DocManager(DocManagerBase):
     """The DocManager class creates a connection to the backend engine and
         adds/removes documents, and in the case of rollback, searches for them.
 
@@ -72,6 +74,19 @@ class DocManager():
         """Stops any running threads
         """
         pass
+
+    def update(self, doc, update_spec):
+        """Apply updates given in update_spec to the document whose id
+        matches that of doc.
+
+        """
+        db, coll = doc['ns'].split('.', 1)
+        updated = self.mongo[db][coll].find_and_modify(
+            {self.unique_key: doc['_id']},
+            update_spec,
+            new=True
+        )
+        return updated
 
     def upsert(self, doc):
         """Update or insert a document into Mongo

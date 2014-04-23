@@ -32,6 +32,7 @@ from elasticsearch.helpers import bulk
 from mongo_connector import errors
 from mongo_connector.compat import reraise
 from mongo_connector.constants import DEFAULT_COMMIT_INTERVAL
+from mongo_connector.doc_managers import DocManagerBase
 from mongo_connector.util import retry_until_ok
 
 
@@ -48,7 +49,7 @@ def wrap_exceptions(func):
     return wrap
 
 
-class DocManager():
+class DocManager(DocManagerBase):
     """The DocManager class creates a connection to the backend engine and
         adds/removes documents, and in the case of rollback, searches for them.
 
@@ -76,6 +77,18 @@ class DocManager():
         """ Stops the instance
         """
         self.auto_commit_interval = None
+
+    @wrap_exceptions
+    def update(self, doc, update_spec):
+        """Apply updates given in update_spec to the document whose id
+        matches that of doc.
+
+        """
+        document = self.elastic.get(index=doc['ns'],
+                                    id=str(doc['_id']))
+        updated = self.apply_update(document['_source'], update_spec)
+        self.upsert(updated)
+        return updated
 
     @wrap_exceptions
     def upsert(self, doc):
