@@ -144,6 +144,7 @@ class OplogThread(threading.Thread):
             err = False
             remove_inc = 0
             upsert_inc = 0
+            update_inc = 0
             try:
                 logging.debug("OplogThread: about to process new oplog "
                               "entries")
@@ -165,49 +166,61 @@ class OplogThread(threading.Thread):
 
                         #sync the current oplog operation
                         operation = entry['op']
+                        if operation == 'u':
+                            entry['_id'] = entry['o2']['_id']
+                        else:
+                            entry['_id'] = entry['o']['_id']
                         ns = entry['ns']
 
                         # use namespace mapping if one exists
                         ns = self.dest_mapping.get(entry['ns'], ns)
 
-                        #delete
-                        try:
-                            logging.debug("OplogThread: Operation for this "
-                                          "entry is %s" % str(operation))
-                            if operation == 'd':
-                                entry['_id'] = entry['o']['_id']
-                                for dm in self.doc_managers:
+                        for docman in self.doc_managers:
+                            try:
+                                logging.debug("OplogThread: Operation for this "
+                                              "entry is %s" % str(operation))
+
+                                if operation == 'd':     # Remove
+                                    docman.remove(entry)
                                     remove_inc += 1
-                                    dm.remove(entry)
-                            #insert/update. They are equal because of lack
-                            #of support for partial update
-                            elif operation == 'i' or operation == 'u':
-                                doc = self.retrieve_doc(entry)
-                                if doc is not None:
+                                elif operation == 'i':  # Insert
+                                    # Retrieve inserted document from
+                                    # 'o' field in oplog record
+                                    doc = entry.get('o')
+                                    # Extract timestamp and namespace
                                     doc['_ts'] = util.bson_ts_to_long(
                                         entry['ts'])
                                     doc['ns'] = ns
-                                    for dm in self.doc_managers:
-                                        upsert_inc += 1
-                                        dm.upsert(doc)
-                        except errors.OperationFailed:
-                            logging.error(
-                                "Unable to %s doc with id %s" % (
-                                    "delete" if operation == "d" else "upsert",
-                                    str(entry['_id'])
-                                ))
-                        except errors.ConnectionFailed:
-                            logging.error(
-                                "Network error while trying to %s %s" % (
-                                    "delete" if operation == "d" else "upsert",
-                                    str(entry['_id'])
-                                ))
+                                    docman.upsert(doc)
+                                    upsert_inc += 1
+                                elif operation == 'u':  # Update
+                                    # Update
+                                    # 'o' field contains _id of updated document
+                                    doc = {"_id": entry['_id'],
+                                           "_ts": util.bson_ts_to_long(
+                                               entry['ts']),
+                                           "ns": ns}
+                                    # 'o2' field contains the update spec
+                                    docman.update(doc, entry.get('o', {}))
+                                    update_inc += 1
+                            except errors.OperationFailed:
+                                logging.exception(
+                                    "Connection failed applying %s to document "
+                                    "with _id: %r" % (
+                                        operation, entry['_id']
+                                    ))
+                            except errors.ConnectionFailed:
+                                logging.exception(
+                                    "Connection failed applying %s to document "
+                                    "with _id: %r" % (
+                                        operation, entry['_id']
+                                    ))
 
-                        if (remove_inc + upsert_inc) % 1000 == 0:
-                            logging.debug("OplogThread: Removed %d "
-                                          " documents and upserted %d "
-                                          " documents so far"
-                                          % (remove_inc, upsert_inc))
+                        if (remove_inc + upsert_inc + update_inc) % 1000 == 0:
+                            logging.debug(
+                                "OplogThread: Documents removed: %d, "
+                                "inserted: %d, updated: %d so far" % (
+                                    remove_inc, upsert_inc, update_inc))
 
                         logging.debug("OplogThread: Doc is processed.")
 
@@ -247,8 +260,8 @@ class OplogThread(threading.Thread):
                 self.checkpoint = last_ts
                 self.update_checkpoint()
 
-            logging.debug("OplogThread: Sleeping.  This batch I removed %d "
-                          " documents and I upserted %d documents."
+            logging.debug("OplogThread: Sleeping. Documents removed: %d, "
+                          "upserted: %d, updated: %d"
                           % (remove_inc, upsert_inc))
             time.sleep(2)
 
