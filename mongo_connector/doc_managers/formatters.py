@@ -1,11 +1,17 @@
 import base64
+import re
+
+from uuid import UUID
 
 import bson
+import bson.json_util
 
 from mongo_connector.compat import PY3
 
 if PY3:
     long = int
+
+RE_TYPE = type(re.compile(""))
 
 
 class DocumentFormatter(object):
@@ -40,22 +46,38 @@ class DefaultDocumentFormatter(DocumentFormatter):
     and stringifies everything else.
     """
 
-    def __init__(self):
-        # Map type -> transformation function for that type
-        identity = lambda x: x
-        self.types_mapping = {
-            bson.Binary: base64.b64encode,
-            list: lambda l: [self.types_mapping[type(el)] for el in l],
-            dict: self.format_document,
-            int: identity,
-            long: identity,
-            float: identity
-        }
-
     def transform_value(self, value):
-        transformer = self.types_mapping.get(type(value))
-        if transformer is not None:
-            return transformer(value)
+        # This is largely taken from bson.json_util.default, though not the same
+        # so we don't modify the structure of the document
+        if isinstance(value, dict):
+            return self.format_document(value)
+        elif isinstance(value, list):
+            return [self.transform_value(v) for v in value]
+        if isinstance(value, (RE_TYPE, bson.Regex)):
+            flags = ""
+            if value.flags & re.IGNORECASE:
+                flags += "i"
+            if value.flags & re.LOCALE:
+                flags += "l"
+            if value.flags & re.MULTILINE:
+                flags += "m"
+            if value.flags & re.DOTALL:
+                flags += "s"
+            if value.flags & re.UNICODE:
+                flags += "u"
+            if value.flags & re.VERBOSE:
+                flags += "x"
+            pattern = value.pattern
+            # quasi-JavaScript notation (may include non-standard flags)
+            return '/%s/%s' % (pattern, flags)
+        elif (isinstance(value, bson.Binary) or
+              (PY3 and isinstance(value, bytes))):
+            # Just include body of binary data without subtype
+            return base64.b64encode(value).decode()
+        elif isinstance(value, UUID):
+            return value.hex
+        elif isinstance(value, (int, long, float)):
+            return value
         # Default
         return str(value)
 
@@ -66,7 +88,8 @@ class DefaultDocumentFormatter(DocumentFormatter):
         def _kernel(doc):
             for key in document:
                 value = document[key]
-                yield self.transform_element(key, value)
+                for new_k, new_v in self.transform_element(key, value):
+                    yield new_k, new_v
         return dict(_kernel(document))
 
 
@@ -88,17 +111,6 @@ class DocumentFlattener(DefaultDocumentFormatter):
 
     """
 
-    def transform_value(self, value):
-        if isinstance(value, dict):
-            return self.transform_document(value)
-        elif isinstance(value, list):
-            return [self.transform_value(v) for v in value]
-        elif isinstance(value, (float, long, int)):
-            return value
-        elif isinstance(value, bson.Binary):
-            return base64.b64encode(value)
-        return str(value)
-
     def transform_element(self, key, value):
         if isinstance(value, list):
             for li, lv in enumerate(value):
@@ -110,6 +122,8 @@ class DocumentFlattener(DefaultDocumentFormatter):
             for doc_key in formatted:
                 yield "%s.%s" % (key, doc_key), formatted[doc_key]
         else:
+            # We assume that transform_value will return a 'flat' value,
+            # not a list or dict
             yield key, self.transform_value(value)
 
     def format_document(self, document):
