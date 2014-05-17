@@ -9,6 +9,7 @@ else:
 
 import bson
 
+from mongo_connector.compat import PY3
 from mongo_connector.doc_managers.formatters import (
     DefaultDocumentFormatter, DocumentFlattener)
 
@@ -39,7 +40,10 @@ class TestFormatters(unittest.TestCase):
 
         # binary
         self.assertEqual(trans(self.bin1), 'AGhlbGxvAA==')
-        self.assertEqual(trans(self.bin2), 'AGhlbGxvAA==')
+        if PY3:
+            self.assertEqual(trans(self.bin2), 'AGhlbGxvAA==')
+        else:
+            self.assertEqual(trans(self.bin2), self.bin2)
 
         # UUID
         self.assertEqual(trans(self.xuuid), self.xuuid.hex)
@@ -88,12 +92,12 @@ class TestFormatters(unittest.TestCase):
                            for k, v in self.doc.items())
         self.assertEqual(transformed2, constructed)
 
-        # With nested lists
-        lists = {"doc": [self.doc, {"sub-doc": self.doc}]}
+        # With a list
+        with_list = {"doc": [self.doc, {"sub-doc": self.doc}]}
         constructed_a = dict(("doc.0.%s" % k, formatter.transform_value(v))
                              for k, v in self.doc.items())
         constructed_b = dict(("doc.1.sub-doc.%s" % k,
                               formatter.transform_value(v))
                              for k, v in self.doc.items())
         constructed_a.update(constructed_b)
-        self.assertEqual(lists, constructed)
+        self.assertEqual(formatter.format_document(with_list), constructed_a)
