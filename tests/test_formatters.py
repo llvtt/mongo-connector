@@ -24,9 +24,11 @@ class TestFormatters(unittest.TestCase):
         cls.xuuid = uuid.uuid4()
         cls.oid = bson.ObjectId()
         cls.regex = re.compile("hello", re.VERBOSE | re.MULTILINE)
+        cls.lst = [cls.regex, cls.bin1, cls.bin2, cls.xuuid, cls.oid]
         cls.doc = {'r': cls.regex, 'b1': cls.bin1, 'b2': cls.bin2,
                    'uuid': cls.xuuid, 'oid': cls.oid}
-        cls.lst = [cls.regex, cls.bin1, cls.bin2, cls.xuuid, cls.oid]
+        cls.doc_nested = {"doc": cls.doc}
+        cls.doc_list = {"list": [cls.doc, cls.doc_nested, cls.lst]}
 
     def test_types(self):
         trans = DefaultDocumentFormatter().transform_value
@@ -70,12 +72,10 @@ class TestFormatters(unittest.TestCase):
         check_format(self.doc)
 
         # Nested
-        doc2 = {"nested": self.doc}
-        check_format(doc2)
+        check_format(self.doc_nested)
 
-        # With nested lists
-        doc3 = {"nested": [[{"inner_doc": [[self.doc]]}]]}
-        check_format(doc3)
+        # With a list
+        check_format(self.doc_list)
 
     def test_flattener(self):
         formatter = DocumentFlattener()
@@ -85,19 +85,19 @@ class TestFormatters(unittest.TestCase):
                            for k, v in self.doc.items())
         self.assertEqual(transformed, formatter.format_document(self.doc))
 
-        # Nested documents
-        nested = {"doc": self.doc}
-        transformed2 = formatter.format_document(nested)
+        # Nested
+        transformed2 = formatter.format_document(self.doc_nested)
         constructed = dict(("doc.%s" % k, formatter.transform_value(v))
                            for k, v in self.doc.items())
         self.assertEqual(transformed2, constructed)
 
         # With a list
-        with_list = {"doc": [self.doc, {"sub-doc": self.doc}]}
-        constructed_a = dict(("doc.0.%s" % k, formatter.transform_value(v))
-                             for k, v in self.doc.items())
-        constructed_b = dict(("doc.1.sub-doc.%s" % k,
-                              formatter.transform_value(v))
-                             for k, v in self.doc.items())
-        constructed_a.update(constructed_b)
-        self.assertEqual(formatter.format_document(with_list), constructed_a)
+        constructed1 = dict(("list.0.%s" % k, formatter.transform_value(v))
+                            for k, v in self.doc.items())
+        constructed2 = dict(("list.1.%s" % k, v)
+                            for k, v in transformed2.items())
+        constructed3 = dict(("list.2.%d" % i, formatter.transform_value(v))
+                            for i, v in enumerate(self.lst))
+        constructed1.update(constructed2)
+        constructed1.update(constructed3)
+        self.assertEqual(formatter.format_document(self.doc_list), constructed1)
