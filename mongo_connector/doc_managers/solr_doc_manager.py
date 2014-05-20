@@ -121,7 +121,8 @@ class DocManager(DocManagerBase):
         """
 
         # Translate the _id field to whatever unique key we're using
-        doc[self.unique_key] = doc["_id"]
+        if "_id" in doc:
+            doc[self.unique_key] = doc["_id"]
 
         # SOLR cannot index fields within sub-documents, so flatten documents
         # with the dot-separated path to each value as the respective key
@@ -154,7 +155,7 @@ class DocManager(DocManagerBase):
         # Results is a lazy iterable containing only 1 result
         for doc in results:
             updated = self.apply_update(doc, update_spec)
-            self.upsert(updated)
+            self.upsert(self._clean_doc(updated))
         return updated
 
     @wrap_exceptions

@@ -24,7 +24,6 @@
 import logging
 from threading import Timer
 
-import bson.json_util as bsjson
 from elasticsearch import Elasticsearch, exceptions as es_exceptions
 from elasticsearch.helpers import scan, streaming_bulk
 
@@ -33,6 +32,7 @@ from mongo_connector.constants import (DEFAULT_COMMIT_INTERVAL,
                                        DEFAULT_MAX_BULK)
 from mongo_connector.util import retry_until_ok
 from mongo_connector.doc_managers import DocManagerBase, exception_wrapper
+from mongo_connector.doc_managers.formatters import DefaultDocumentFormatter
 
 
 wrap_exceptions = exception_wrapper({
@@ -63,6 +63,7 @@ class DocManager(DocManagerBase):
         self.chunk_size = chunk_size
         if self.auto_commit_interval not in [None, 0]:
             self.run_auto_commit()
+        self._formatter = DefaultDocumentFormatter()
 
     def stop(self):
         """ Stops the instance
@@ -78,7 +79,7 @@ class DocManager(DocManagerBase):
         document = self.elastic.get(index=doc['ns'],
                                     id=str(doc['_id']))
         updated = self.apply_update(document['_source'], update_spec)
-        self.upsert(updated)
+        self.upsert(self._formatter.format_document(updated))
         return updated
 
     @wrap_exceptions
@@ -95,7 +96,7 @@ class DocManager(DocManagerBase):
         doc[self.unique_key] = str(doc["_id"])
         doc_id = doc[self.unique_key]
         self.elastic.index(index=index, doc_type=doc_type,
-                           body=bsjson.dumps(doc), id=doc_id,
+                           body=self._formatter.format_document(doc), id=doc_id,
                            refresh=(self.auto_commit_interval == 0))
 
     @wrap_exceptions
@@ -114,7 +115,7 @@ class DocManager(DocManagerBase):
                     "_index": index,
                     "_type": self.doc_type,
                     "_id": doc_id,
-                    "_source": doc
+                    "_source": self._formatter.format_document(doc)
                 }
             if not doc:
                 raise errors.EmptyDocsError(
