@@ -191,7 +191,7 @@ class DocManager(DocManagerBase):
         for doc in results:
             updated = self.apply_update(doc, update_spec)
             self.upsert(updated)
-        return updated
+            return updated
 
     @wrap_exceptions
     def upsert(self, doc):
