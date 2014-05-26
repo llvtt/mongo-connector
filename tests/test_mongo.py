@@ -145,6 +145,9 @@ class TestSynchronizer(unittest.TestCase):
         # Update by adding a sub-document
         check_update({"$set": {"b": {"0": {"c": 100}}}})
 
+        # Update whole document
+        check_update({"a": 0, "g": 1, "h": 2})
+
     def test_rollback(self):
         """Tests rollback. We force a rollback by adding a doc, killing the
             primary, adding another doc, killing the new primary, and then
