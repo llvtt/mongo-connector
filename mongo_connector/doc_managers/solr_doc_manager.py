@@ -193,9 +193,15 @@ class DocManager(DocManagerBase):
         """
         query = "%s:%s" % (self.unique_key, str(doc['_id']))
         results = self.solr.search(query)
-        # Results is a lazy iterable containing only 1 result
+        if not len(results):
+            # Document may not be retrievable yet
+            self.commit()
+            results = self.solr.search(query)
+        # Results is an iterable containing only 1 result
         for doc in results:
             updated = self.apply_update(doc, update_spec)
+            # A _version_ of 0 will always apply the update
+            updated['_version_'] = 0
             self.upsert(updated)
             return updated
 
