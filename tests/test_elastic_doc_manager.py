@@ -33,31 +33,35 @@ class ElasticDocManagerTester(ElasticsearchTestCase):
     """Test class for elastic_docManager
     """
 
+    def put_metadata(self, d):
+        """Simulate the metadata that's included in documents passed on to
+        DocManagers from an OplogThread."""
+        d['ns'] = 'test.test'
+        d['_ts'] = 1
+        return d
+
     def test_update(self):
-        doc = {"_id": '1', "ns": "test.test", "_ts": 1, "a": 1, "b": 2}
-        self.elastic_doc.upsert(doc)
+        doc = {"_id": '1', "a": 1, "b": 2}
+        self.elastic_doc.upsert(self.put_metadata(doc))
         # $set only
         update_spec = {"$set": {"a": 1, "b": 2}}
-        doc = self.elastic_doc.update(doc, update_spec)
-        self.assertEqual(doc, {"_id": '1', "ns": "test.test", "_ts": 1,
-                               "a": 1, "b": 2})
+        doc = self.elastic_doc.update(self.put_metadata(doc), update_spec)
+        self.assertEqual(doc, {"_id": '1', "a": 1, "b": 2})
         # $unset only
         update_spec = {"$unset": {"a": True}}
-        doc = self.elastic_doc.update(doc, update_spec)
-        self.assertEqual(doc, {"_id": '1', "ns": "test.test", "_ts": 1,
-                               "b": 2})
+        doc = self.elastic_doc.update(self.put_metadata(doc), update_spec)
+        self.assertEqual(doc, {"_id": '1', "b": 2})
         # mixed $set/$unset
         update_spec = {"$unset": {"b": True}, "$set": {"c": 3}}
-        doc = self.elastic_doc.update(doc, update_spec)
-        self.assertEqual(doc, {"_id": '1', "ns": "test.test", "_ts": 1,
-                               "c": 3})
+        doc = self.elastic_doc.update(self.put_metadata(doc), update_spec)
+        self.assertEqual(doc, {"_id": '1', "c": 3})
 
     def test_upsert(self):
         """Ensure we can properly insert into ElasticSearch via DocManager.
         """
 
-        docc = {'_id': '1', 'name': 'John', 'ns': 'test.test'}
-        self.elastic_doc.upsert(docc)
+        docc = {'_id': '1', 'name': 'John'}
+        self.elastic_doc.upsert(self.put_metadata(docc))
         res = self.elastic_conn.search(
             index="test.test",
             body={"query": {"match_all": {}}}
@@ -73,7 +77,7 @@ class ElasticDocManagerTester(ElasticsearchTestCase):
         """
         self.elastic_doc.bulk_upsert([])
 
-        docs = ({"_id": i, "ns": "test.test"} for i in range(1000))
+        docs = (self.put_metadata({"_id": i}) for i in range(1000))
         self.elastic_doc.bulk_upsert(docs)
         res = self.elastic_conn.search(
             index="test.test",
@@ -85,8 +89,8 @@ class ElasticDocManagerTester(ElasticsearchTestCase):
         for i, r in enumerate(returned_ids):
             self.assertEqual(r, i)
 
-        docs = ({"_id": i, "weight": 2*i,
-                 "ns": "test.test"} for i in range(1000))
+        docs = (self.put_metadata({"_id": i, "weight": 2*i})
+                for i in range(1000))
         self.elastic_doc.bulk_upsert(docs)
 
         res = self.elastic_conn.search(
@@ -103,8 +107,8 @@ class ElasticDocManagerTester(ElasticsearchTestCase):
         """Ensure we can properly delete from ElasticSearch via DocManager.
         """
 
-        docc = {'_id': '1', 'name': 'John', 'ns': 'test.test'}
-        self.elastic_doc.upsert(docc)
+        docc = {'_id': '1', 'name': 'John'}
+        self.elastic_doc.upsert(self.put_metadata(docc))
         res = self.elastic_conn.search(
             index="test.test",
             body={"query": {"match_all": {}}}
@@ -112,7 +116,7 @@ class ElasticDocManagerTester(ElasticsearchTestCase):
         res = [x["_source"] for x in res]
         self.assertEqual(len(res), 1)
 
-        self.elastic_doc.remove(docc)
+        self.elastic_doc.remove(self.put_metadata(docc))
         res = self.elastic_conn.search(
             index="test.test",
             body={"query": {"match_all": {}}}
@@ -125,10 +129,10 @@ class ElasticDocManagerTester(ElasticsearchTestCase):
             _search(), compare.
         """
 
-        docc = {'_id': '1', 'name': 'John', 'ns': 'test.test'}
-        self.elastic_doc.upsert(docc)
-        docc = {'_id': '2', 'name': 'Paul', 'ns': 'test.test'}
-        self.elastic_doc.upsert(docc)
+        docc = {'_id': '1', 'name': 'John'}
+        self.elastic_doc.upsert(self.put_metadata(docc))
+        docc = {'_id': '2', 'name': 'Paul'}
+        self.elastic_doc.upsert(self.put_metadata(docc))
         search = list(self._search())
         search2 = []
         es_cursor = self.elastic_conn.search(
@@ -161,15 +165,15 @@ class ElasticDocManagerTester(ElasticsearchTestCase):
         search = list(self.elastic_doc.search(5767301236327972865,
                                               5767301236327972866))
         self.assertEqual(len(search), 2)
-        result_names = [result.get("name") for result in search]
-        self.assertIn('John', result_names)
-        self.assertIn('John Paul', result_names)
+        result_ids = [result.get("_id") for result in search]
+        self.assertIn('1', result_ids)
+        self.assertIn('2', result_ids)
 
     def test_elastic_commit(self):
         """Test that documents get properly added to ElasticSearch.
         """
 
-        docc = {'_id': '3', 'name': 'Waldo', 'ns': 'test.test'}
+        docc = {'_id': '3', 'name': 'Waldo'}
         docman = DocManager(elastic_pair)
         # test cases:
         # -1 = no autocommit
@@ -177,7 +181,7 @@ class ElasticDocManagerTester(ElasticsearchTestCase):
         # x > 0 = commit within x seconds
         for autocommit_interval in [None, 0, 1, 2]:
             docman.auto_commit_interval = autocommit_interval
-            docman.upsert(docc)
+            docman.upsert(self.put_metadata(docc))
             if autocommit_interval is None:
                 docman.commit()
             else:
