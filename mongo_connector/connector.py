@@ -76,7 +76,8 @@ class Connector(threading.Thread):
         self.kwargs = kwargs
 
         # Initialize and set the command helper
-        command_helper = CommandHelper(self.ns_set, self.dest_mapping)
+        command_helper = CommandHelper(kwargs.get('ns_set', []),
+                                       kwargs.get('dest_mapping', {}))
         for dm in self.doc_managers:
             dm.command_helper = command_helper
 
@@ -102,7 +103,7 @@ class Connector(threading.Thread):
                     sys.exit(2)
 
     @classmethod
-    def from_config(config):
+    def from_config(cls, config):
         """Create a new Connector instance from a Config object."""
         auth_key = None
         password_file = config['authentication.passwordFile']
@@ -117,7 +118,8 @@ class Connector(threading.Thread):
         if password is not None:
             auth_key = password
         connector = Connector(
-            address=config['mainAddress'],
+            mongo_address=config['mainAddress'],
+            doc_managers=config['docManagers'],
             oplog_checkpoint=config['oplogFile'],
             collection_dump=(not config['noDump']),
             batch_size=config['batchSize'],
@@ -127,7 +129,6 @@ class Connector(threading.Thread):
             fields=config['fields'],
             ns_set=config['namespaces.include'],
             dest_mapping=config['namespaces.mapping'],
-            doc_managers=config['docManagers'],
             gridfs_set=config['namespaces.gridfs']
         )
         return connector
