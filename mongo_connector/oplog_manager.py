@@ -79,7 +79,7 @@ class OplogThread(threading.Thread):
 
         LOG.info('OplogThread: Initializing oplog thread')
 
-        self.oplog = self.main_connection.local.oplog.rs
+        self.oplog = self.primary_client.local.oplog.rs
 
         if not self.oplog.find_one():
             err_msg = 'OplogThread: No oplog for thread:'
@@ -247,7 +247,7 @@ class OplogThread(threading.Thread):
                                     doc['ns'] = ns
                                     if is_gridfs_file:
                                         docman.insert_file(GridFSFile(
-                                            self.main_connection, doc))
+                                            self.primary_client, doc))
                                     else:
                                         docman.upsert(doc)
                                     upsert_inc += 1
@@ -389,12 +389,12 @@ class OplogThread(threading.Thread):
 
         #no namespaces specified
         if not self.namespace_set:
-            db_list = retry_until_ok(self.main_connection.database_names)
+            db_list = retry_until_ok(self.primary_client.database_names)
             for database in db_list:
                 if database == "config" or database == "local":
                     continue
                 coll_list = retry_until_ok(
-                    self.main_connection[database].collection_names)
+                    self.primary_client[database].collection_names)
                 for coll in coll_list:
                     # ignore system collections
                     if coll.startswith("system."):
@@ -420,7 +420,7 @@ class OplogThread(threading.Thread):
 
                 # Loop to handle possible AutoReconnect
                 while attempts < 60:
-                    target_coll = self.main_connection[database][coll]
+                    target_coll = self.primary_client[database][coll]
                     if not last_id:
                         cursor = util.retry_until_ok(
                             target_coll.find,
@@ -498,7 +498,7 @@ class OplogThread(threading.Thread):
                 for doc in docs_to_dump(self.gridfs_files_set):
                     doc['ns'] = doc['ns'][:-len(".files")]
                     dm.insert_file(
-                        GridFSFile(self.main_connection, doc))
+                        GridFSFile(self.primary_client, doc))
 
             except:
                 # Likely exceptions:
@@ -724,7 +724,7 @@ class OplogThread(threading.Thread):
                 bson_obj_id_list = [obj_id(doc['_id']) for doc in doc_list]
 
                 to_update = util.retry_until_ok(
-                    self.main_connection[database][coll].find,
+                    self.primary_client[database][coll].find,
                     {'_id': {'$in': bson_obj_id_list}},
                     fields=self._fields
                 )
