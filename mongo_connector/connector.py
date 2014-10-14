@@ -124,6 +124,37 @@ class Connector(threading.Thread):
                                  (self.oplog_checkpoint))
                     sys.exit(2)
 
+    @classmethod
+    def from_config(config):
+        """Create a new Connector instance from a Config object."""
+        auth_key = None
+        password_file = config['authentication.passwordFile']
+        if password_file is not None:
+            try:
+                auth_key = open(config['passwordFile']).read()
+                auth_key = re.sub(r'\s', '', auth_key)
+            except IOError:
+                LOG.error('Could not load password file!')
+                sys.exit(1)
+        password = config['authentication.password']
+        if password is not None:
+            auth_key = password
+        connector = Connector(
+            address=config['mainAddress'],
+            oplog_checkpoint=config['oplogFile'],
+            collection_dump=(not config['noDump']),
+            batch_size=config['batchSize'],
+            continue_on_error=config['continueOnError'],
+            auth_username=config['authentication.adminUsername'],
+            auth_key=auth_key,
+            fields=config['fields'],
+            ns_set=config['namespaces.include'],
+            dest_mapping=config['namespaces.mapping'],
+            doc_managers=config['docManagers'],
+            gridfs_set=config['namespaces.gridfs']
+        )
+        return connector
+
     def join(self):
         """ Joins thread, stops it from running
         """
@@ -852,33 +883,7 @@ def main():
 
     LOG.info('Beginning Mongo Connector')
 
-    auth_key = None
-    password_file = conf['authentication.passwordFile']
-    if password_file is not None:
-        try:
-            auth_key = open(conf['passwordFile']).read()
-            auth_key = re.sub(r'\s', '', auth_key)
-        except IOError:
-            LOG.error('Could not load password file!')
-            sys.exit(1)
-    password = conf['authentication.password']
-    if password is not None:
-        auth_key = password
-
-    connector = Connector(
-        address=conf['mainAddress'],
-        oplog_checkpoint=conf['oplogFile'],
-        collection_dump=(not conf['noDump']),
-        batch_size=conf['batchSize'],
-        continue_on_error=conf['continueOnError'],
-        auth_username=conf['authentication.adminUsername'],
-        auth_key=auth_key,
-        fields=conf['fields'],
-        ns_set=conf['namespaces.include'],
-        dest_mapping=conf['namespaces.mapping'],
-        doc_managers=conf['docManagers'],
-        gridfs_set=conf['namespaces.gridfs']
-    )
+    connector = Connector.from_config(conf)
     connector.start()
 
     while True:
