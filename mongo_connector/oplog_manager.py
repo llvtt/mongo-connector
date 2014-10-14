@@ -221,7 +221,7 @@ class OplogThread(threading.Thread):
 
                         # use namespace mapping if one exists
                         ns = self.dest_mapping.get(ns, ns)
-
+                        timestamp = util.bson_ts_to_long(entry['ts'])
                         for docman in self.doc_managers:
                             try:
                                 LOG.debug("OplogThread: Operation for this "
@@ -229,11 +229,7 @@ class OplogThread(threading.Thread):
 
                                 # Remove
                                 if operation == 'd':
-                                    entry['_id'] = entry['o']['_id']
-                                    entry['ns'] = ns
-                                    entry['_ts'] = util.bson_ts_to_long(
-                                        entry['ts'])
-                                    docman.remove(entry)
+                                    docman.remove(entry['_id'], ns, timestamp)
                                     remove_inc += 1
 
                                 # Insert
@@ -242,33 +238,27 @@ class OplogThread(threading.Thread):
                                     # 'o' field in oplog record
                                     doc = entry.get('o')
                                     # Extract timestamp and namespace
-                                    doc['_ts'] = util.bson_ts_to_long(
-                                        entry['ts'])
-                                    doc['ns'] = ns
                                     if is_gridfs_file:
+                                        # TODO: fix file
                                         docman.insert_file(GridFSFile(
                                             self.primary_client, doc))
                                     else:
-                                        docman.upsert(doc)
+                                        docman.upsert(doc, ns, timestamp)
                                     upsert_inc += 1
 
                                 # Update
                                 elif operation == 'u':
-                                    doc = {"_id": entry['o2']['_id'],
-                                           "_ts": util.bson_ts_to_long(
-                                               entry['ts']),
-                                           "ns": ns}
-                                    # 'o' field contains the update spec
-                                    docman.update(doc, entry.get('o', {}))
+                                    docman.update(entry['o2']['_id'],
+                                                  entry['o'],
+                                                  ns, timestamp)
                                     update_inc += 1
 
                                 # Command
                                 elif operation == 'c':
                                     # use unmapped namespace
-                                    db = entry['ns'].split('.', 1)[0]
-                                    doc = entry.get('o')
-                                    doc['db'] = db
-                                    docman.handle_command(doc)
+                                    docman.handle_command(doc,
+                                                          entry['ns'],
+                                                          timestamp)
 
                             except errors.OperationFailed:
                                 LOG.exception(
