@@ -31,93 +31,56 @@ from mongo_connector.constants import DEFAULT_BATCH_SIZE
 from mongo_connector.gridfs_file import GridFSFile
 from mongo_connector.util import log_fatal_exceptions, retry_until_ok
 
-from pymongo import MongoClient
-
 LOG = logging.getLogger(__name__)
 
 
 class OplogThread(threading.Thread):
     """OplogThread gathers the updates for a single oplog.
     """
-    def __init__(self, primary_conn, main_address, oplog_coll, is_sharded,
-                 doc_managers, oplog_progress_dict, namespace_set, auth_key,
-                 auth_username, repl_set=None, collection_dump=True,
-                 batch_size=DEFAULT_BATCH_SIZE, fields=None,
-                 dest_mapping={}, continue_on_error=False, gridfs_set=[]):
-        """Initialize the oplog thread.
-        """
+    def __init__(self, primary_client, doc_managers, progress_dict, **kwargs):
         super(OplogThread, self).__init__()
 
-        self.batch_size = batch_size
+        self.batch_size = kwargs.get('batch_size', DEFAULT_BATCH_SIZE)
 
-        #The connection to the primary for this replicaSet.
-        self.primary_connection = primary_conn
+        # The connection to the primary for this replicaSet.
+        self.primary_client = primary_client
 
-        #Boolean chooses whether to dump the entire collection if no timestamp
-        # is present in the config file
-        self.collection_dump = collection_dump
+        # Are we allowed to perform a collection dump?
+        self.collection_dump = kwargs.get('collection_dump', True)
 
-        #The mongos for sharded setups
-        #Otherwise the same as primary_connection.
-        #The value is set later on.
-        self.main_connection = None
-
-        #The connection to the oplog collection
-        self.oplog = oplog_coll
-
-        #Boolean describing whether the cluster is sharded or not
-        self.is_sharded = is_sharded
-
-        #A document manager for each target system.
-        #These are the same for all threads.
+        # The document manager for each target system.
+        # These are the same for all threads.
         self.doc_managers = doc_managers
 
-        #Boolean describing whether or not the thread is running.
+        # Boolean describing whether or not the thread is running.
         self.running = True
 
-        #Stores the timestamp of the last oplog entry read.
+        # Stores the timestamp of the last oplog entry read.
         self.checkpoint = None
 
-        #A dictionary that stores OplogThread/timestamp pairs.
-        #Represents the last checkpoint for a OplogThread.
-        self.oplog_progress = oplog_progress_dict
+        # A dictionary that stores OplogThread/timestamp pairs.
+        # Represents the last checkpoint for a OplogThread.
+        self.oplog_progress = progress_dict
 
-        #The set of namespaces to process from the mongo cluster.
-        self.namespace_set = namespace_set
+        # The set of namespaces to process from the mongo cluster.
+        self.namespace_set = kwargs.get('namespace_set', [])
 
-        #The set of gridfs namespaces to process from the mongo cluster
-        self.gridfs_set = gridfs_set
+        # The set of gridfs namespaces to process from the mongo cluster
+        self.gridfs_set = kwargs.get('gridfs_set', [])
 
-        #The dict of source namespaces to destination namespaces
-        self.dest_mapping = dest_mapping
+        # The dict of source namespaces to destination namespaces
+        self.dest_mapping = kwargs.get('dest_mapping', {})
 
-        #Whether the collection dump gracefully handles exceptions
-        self.continue_on_error = continue_on_error
-
-        #If authentication is used, this is an admin password.
-        self.auth_key = auth_key
-
-        #This is the username used for authentication.
-        self.auth_username = auth_username
+        # Whether the collection dump gracefully handles exceptions
+        self.continue_on_error = kwargs.get('continue_on_error', False)
 
         # Set of fields to export
-        self.fields = fields
+        self.fields = kwargs.get('fields', [])
 
         LOG.info('OplogThread: Initializing oplog thread')
 
-        if is_sharded:
-            self.main_connection = MongoClient(main_address)
-        else:
-            self.main_connection = MongoClient(main_address,
-                                               replicaSet=repl_set)
-            self.oplog = self.main_connection['local']['oplog.rs']
+        self.oplog = self.main_connection.local.oplog.rs
 
-        if auth_key is not None:
-            #Authenticate for the whole system
-            self.primary_connection['admin'].authenticate(
-                auth_username, auth_key)
-            self.main_connection['admin'].authenticate(
-                auth_username, auth_key)
         if not self.oplog.find_one():
             err_msg = 'OplogThread: No oplog for thread:'
             LOG.warning('%s %s' % (err_msg, self.primary_connection))
@@ -204,7 +167,6 @@ class OplogThread(threading.Thread):
                       % cursor_len)
 
             last_ts = None
-            err = False
             remove_inc = 0
             upsert_inc = 0
             update_inc = 0
@@ -346,14 +308,6 @@ class OplogThread(threading.Thread):
                 LOG.exception(
                     "Cursor closed due to an exception. "
                     "Will attempt to reconnect.")
-                err = True
-
-            if err is True and self.auth_key is not None:
-                self.primary_connection['admin'].authenticate(
-                    self.auth_username, self.auth_key)
-                self.main_connection['admin'].authenticate(
-                    self.auth_username, self.auth_key)
-                err = False
 
             # update timestamp before attempting to reconnect to MongoDB,
             # after being join()'ed, or if the cursor closes
