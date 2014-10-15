@@ -60,7 +60,7 @@ class Connector(threading.Thread):
         self.auth_key = kwargs.pop('auth_key', None)
 
         # Username for authentication
-        self.auth_username = kwargs.pop('auth_username')
+        self.auth_username = kwargs.pop('auth_username', None)
 
         # The name of the file that stores the progress of the OplogThreads
         self.oplog_checkpoint = kwargs.pop('oplog_checkpoint',

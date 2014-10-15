@@ -26,6 +26,9 @@ import sys
 import time
 import threading
 import traceback
+
+from gridfs import GridFS
+
 from mongo_connector import errors, util
 from mongo_connector.constants import DEFAULT_BATCH_SIZE
 from mongo_connector.gridfs_file import GridFSFile
@@ -229,7 +232,8 @@ class OplogThread(threading.Thread):
 
                                 # Remove
                                 if operation == 'd':
-                                    docman.remove(entry['_id'], ns, timestamp)
+                                    docman.remove(
+                                        entry['o']['_id'], ns, timestamp)
                                     remove_inc += 1
 
                                 # Insert
@@ -239,9 +243,13 @@ class OplogThread(threading.Thread):
                                     doc = entry.get('o')
                                     # Extract timestamp and namespace
                                     if is_gridfs_file:
-                                        # TODO: fix file
-                                        docman.insert_file(GridFSFile(
-                                            self.primary_client, doc))
+                                        db, coll = ns.split('.', 1)
+                                        gridfs = GridFS(
+                                            self.primary_client[db], coll)
+                                        gridfile = GridFSFile(
+                                            gridfs, doc)
+                                        docman.insert_file(
+                                            gridfile, ns, timestamp)
                                     else:
                                         docman.upsert(doc, ns, timestamp)
                                     upsert_inc += 1
@@ -256,6 +264,7 @@ class OplogThread(threading.Thread):
                                 # Command
                                 elif operation == 'c':
                                     # use unmapped namespace
+                                    doc = entry.get('o')
                                     docman.handle_command(doc,
                                                           entry['ns'],
                                                           timestamp)
@@ -400,68 +409,64 @@ class OplogThread(threading.Thread):
             return None
         long_ts = util.bson_ts_to_long(timestamp)
 
-        def docs_to_dump(dump_set):
-            for namespace in dump_set:
-                LOG.info("OplogThread: dumping collection %s"
-                         % namespace)
-                database, coll = namespace.split('.', 1)
-                last_id = None
-                attempts = 0
+        def docs_to_dump(namespace):
+            database, coll = namespace.split('.', 1)
+            last_id = None
+            attempts = 0
 
-                # Loop to handle possible AutoReconnect
-                while attempts < 60:
-                    target_coll = self.primary_client[database][coll]
-                    if not last_id:
-                        cursor = util.retry_until_ok(
-                            target_coll.find,
-                            fields=self._fields,
-                            sort=[("_id", pymongo.ASCENDING)]
-                        )
-                    else:
-                        cursor = util.retry_until_ok(
-                            target_coll.find,
-                            {"_id": {"$gt": last_id}},
-                            fields=self._fields,
-                            sort=[("_id", pymongo.ASCENDING)]
-                        )
-                    try:
-                        for doc in cursor:
-                            if not self.running:
-                                raise StopIteration
-                            doc["ns"] = self.dest_mapping.get(
-                                namespace, namespace)
-                            doc["_ts"] = long_ts
-                            last_id = doc["_id"]
-                            yield doc
-                        break
-                    except pymongo.errors.AutoReconnect:
-                        attempts += 1
-                        time.sleep(1)
+            # Loop to handle possible AutoReconnect
+            while attempts < 60:
+                target_coll = self.primary_client[database][coll]
+                if not last_id:
+                    cursor = util.retry_until_ok(
+                        target_coll.find,
+                        fields=self._fields,
+                        sort=[("_id", pymongo.ASCENDING)]
+                    )
+                else:
+                    cursor = util.retry_until_ok(
+                        target_coll.find,
+                        {"_id": {"$gt": last_id}},
+                        fields=self._fields,
+                        sort=[("_id", pymongo.ASCENDING)]
+                    )
+                try:
+                    for doc in cursor:
+                        if not self.running:
+                            raise StopIteration
+                        last_id = doc["_id"]
+                        yield doc
+                    break
+                except pymongo.errors.AutoReconnect:
+                    attempts += 1
+                    time.sleep(1)
 
         def upsert_each(dm):
             num_inserted = 0
             num_failed = 0
-            for num, doc in enumerate(docs_to_dump(dump_set)):
-                if num % 10000 == 0:
-                    LOG.debug("Upserted %d docs." % num)
-                try:
-                    dm.upsert(doc)
-                    num_inserted += 1
-                except Exception:
-                    if self.continue_on_error:
-                        LOG.exception(
-                            "Could not upsert document: %r" % doc)
-                        num_failed += 1
-                    else:
-                        raise
+            for namespace in dump_set:
+                for num, doc in enumerate(docs_to_dump(namespace)):
+                    if num % 10000 == 0:
+                        LOG.debug("Upserted %d docs." % num)
+                    try:
+                        dm.upsert(doc, namespace, long_ts)
+                        num_inserted += 1
+                    except Exception:
+                        if self.continue_on_error:
+                            LOG.exception(
+                                "Could not upsert document: %r" % doc)
+                            num_failed += 1
+                        else:
+                            raise
             LOG.debug("Upserted %d docs" % num_inserted)
             if num_failed > 0:
                 LOG.error("Failed to upsert %d docs" % num_failed)
 
         def upsert_all(dm):
             try:
-                dm.bulk_upsert(docs_to_dump(dump_set))
-            except Exception as e:
+                for namespace in dump_set:
+                    dm.bulk_upsert(docs_to_dump(namespace), namespace, long_ts)
+            except Exception:
                 if self.continue_on_error:
                     LOG.exception("OplogThread: caught exception"
                                   " during bulk upsert, re-upserting"
@@ -484,12 +489,13 @@ class OplogThread(threading.Thread):
                         "serially for collection dump." % str(dm))
                     upsert_each(dm)
 
-                # Dump Gridfs files
-                for doc in docs_to_dump(self.gridfs_files_set):
-                    doc['ns'] = doc['ns'][:-len(".files")]
-                    dm.insert_file(
-                        GridFSFile(self.primary_client, doc))
-
+                # Dump GridFS files
+                for gridfs_ns in self.gridfs_files_set:
+                    db, coll = gridfs_ns.split('.', 1)
+                    gridfs = GridFS(self.primary_client[db], coll)
+                    for doc in docs_to_dump(gridfs_ns):
+                        gridfile = GridFSFile(gridfs, doc)
+                        dm.insert_file(gridfile, gridfs_ns, long_ts)
             except:
                 # Likely exceptions:
                 # pymongo.errors.OperationFailure,
@@ -737,9 +743,10 @@ class OplogThread(threading.Thread):
                 LOG.debug("OplogThread: Rollback, removing inconsistent "
                           "docs.")
                 remov_inc = 0
-                for doc in doc_hash.values():
+                for document_id in doc_hash:
                     try:
-                        dm.remove(doc)
+                        dm.remove(document_id, namespace,
+                                  util.bson_ts_to_long(rollback_cutoff_ts))
                         remov_inc += 1
                         LOG.debug("OplogThread: Rollback, removed %s " %
                                   str(doc))
@@ -760,12 +767,12 @@ class OplogThread(threading.Thread):
                 insert_inc = 0
                 fail_insert_inc = 0
                 for doc in to_index:
-                    doc['_ts'] = util.bson_ts_to_long(rollback_cutoff_ts)
-                    doc['ns'] = self.dest_mapping.get(namespace, namespace)
                     try:
                         insert_inc += 1
-                        dm.upsert(doc)
-                    except errors.OperationFailed as e:
+                        dm.upsert(doc,
+                                  self.dest_mapping.get(namespace, namespace),
+                                  util.bson_ts_to_long(rollback_cutoff_ts))
+                    except errors.OperationFailed:
                         fail_insert_inc += 1
                         LOG.exception("OplogThread: Rollback, Unable to "
                                       "insert %s" % doc)
