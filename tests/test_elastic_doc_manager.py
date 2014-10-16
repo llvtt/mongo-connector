@@ -19,27 +19,16 @@ import time
 
 sys.path[0:0] = [""]
 
-from tests import elastic_pair, unittest
+from tests import elastic_pair, unittest, TESTARGS
 from tests.test_elastic import ElasticsearchTestCase
 from tests.test_gridfs_file import MockGridFSFile
 
 from mongo_connector.command_helper import CommandHelper
 from mongo_connector.doc_managers.elastic_doc_manager import DocManager
 
-# Default namespace, timestamp arguments for testing.
-TESTARGS = ('test.test', 1)
-
 
 class TestElasticDocManager(ElasticsearchTestCase):
     """Unit tests for the Elastic DocManager."""
-
-
-    def put_metadata(self, d):
-        """Simulate the metadata that's included in documents passed on to
-        DocManagers from an OplogThread."""
-        d['ns'] = 'test.test'
-        d['_ts'] = 1
-        return d
 
     def test_update(self):
         """Test the update method."""
@@ -126,8 +115,6 @@ class TestElasticDocManager(ElasticsearchTestCase):
         test_data = ' '.join(str(x) for x in range(100000))
         docc = {
             '_id': 'test_id',
-            '_ts': 10,
-            'ns': 'test.test',
             'filename': 'test_filename',
             'upload_date': 5,
             'md5': 'test_md5'

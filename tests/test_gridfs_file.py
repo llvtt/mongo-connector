@@ -33,8 +33,6 @@ from tests.setup_cluster import (
 class MockGridFSFile:
     def __init__(self, doc, data):
         self._id = doc['_id']
-        self._ts = doc['_ts']
-        self.ns = doc['ns']
         self.filename = doc['filename']
         self.upload_date = doc['upload_date']
         self.md5 = doc['md5']
@@ -45,8 +43,6 @@ class MockGridFSFile:
     def get_metadata(self):
         return {
             '_id': self._id,
-            '_ts': self._ts,
-            'ns': self.ns,
             'filename': self.filename,
             'upload_date': self.upload_date,
             'md5': self.md5
