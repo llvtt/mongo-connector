@@ -234,7 +234,7 @@ class DocManager(DocManagerBase):
             updated = self.apply_update(doc, update_spec)
             # A _version_ of 0 will always apply the update
             updated['_version_'] = 0
-            self.upsert(updated)
+            self.upsert(updated, namespace, timestamp)
             return updated
 
     @wrap_exceptions
@@ -250,7 +250,8 @@ class DocManager(DocManagerBase):
                           commit=(self.auto_commit_interval == 0),
                           commitWithin=str(self.auto_commit_interval))
         else:
-            self.solr.add([self._clean_doc(doc)], commit=False)
+            self.solr.add([self._clean_doc(doc, namespace, timestamp)],
+                          commit=False)
 
     @wrap_exceptions
     def bulk_upsert(self, docs, namespace, timestamp):
