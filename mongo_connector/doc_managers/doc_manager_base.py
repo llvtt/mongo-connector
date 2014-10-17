@@ -96,7 +96,7 @@ class DocManagerBase(object):
         This method may be overridden to upsert many documents at once.
         """
         for doc in docs:
-            self.upsert(doc)
+            self.upsert(doc, namespace, timestamp)
 
     def update(self, doc, update_spec, namespace, timestamp):
         """Update a document.

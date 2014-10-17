@@ -54,18 +54,18 @@ class DocManager(DocManagerBase):
         """
         pass
 
-    def update(self, doc, update_spec):
+    def update(self, document_id, update_spec, namespace, timestamp):
         """Apply updates given in update_spec to the document whose id
         matches that of doc.
 
         """
-        document = self.doc_dict[doc["_id"]]
+        document = self.doc_dict[document_id]
         updated = self.apply_update(document, update_spec)
         updated[self.unique_key] = updated.pop("_id")
-        self.upsert(updated)
+        self.upsert(updated, namespace, timestamp)
         return updated
 
-    def upsert(self, doc):
+    def upsert(self, doc, namespace, timestamp):
         """Adds a document to the doc dict.
         """
 
@@ -73,31 +73,35 @@ class DocManager(DocManagerBase):
         if doc.get('_upsert_exception'):
             raise Exception("upsert exception")
 
+        doc['ns'] = namespace
+        doc['_ts'] = timestamp
         doc_id = doc["_id"]
         self.doc_dict[doc_id] = doc
         if doc_id in self.removed_dict:
             del self.removed_dict[doc_id]
 
-    def insert_file(self, f):
+    def insert_file(self, f, namespace, timestamp):
         """Inserts a file to the doc dict.
         """
         doc = f.get_metadata()
         doc['content'] = f.read()
+        doc['ns'] = namespace
+        doc['_ts'] = timestamp
         self.doc_dict[f._id] = doc
 
-    def remove(self, doc):
+    def remove(self, document_id, namespace, timestamp):
         """Removes the document from the doc dict.
         """
-        doc_id = doc["_id"]
         try:
-            del self.doc_dict[doc_id]
-            self.removed_dict[doc_id] = {
-                '_id': doc_id,
-                'ns': doc['ns'],
-                '_ts': doc['_ts']
+            del self.doc_dict[document_id]
+            self.removed_dict[document_id] = {
+                '_id': document_id,
+                'ns': namespace,
+                '_ts': timestamp
             }
         except KeyError:
-            raise OperationFailed("Document does not exist: %s" % str(doc))
+            raise OperationFailed("Document does not exist: %s"
+                                  % str(document_id))
 
     def search(self, start_ts, end_ts):
         """Searches through all documents and finds all documents that were

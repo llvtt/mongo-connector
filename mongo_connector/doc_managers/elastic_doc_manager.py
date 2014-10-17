@@ -86,7 +86,7 @@ class DocManager(DocManagerBase):
     def handle_command(self, doc, namespace, timestamp):
         db = namespace.split('.', 1)[0]
         if doc.get('dropDatabase'):
-            dbs = self.command_helper.map_db(doc['db'])
+            dbs = self.command_helper.map_db(db)
             for _db in dbs:
                 self.elastic.indices.delete(index=_db.lower())
 
