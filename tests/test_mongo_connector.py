@@ -55,10 +55,8 @@ class TestMongoConnector(unittest.TestCase):
         """Test whether the connector initiates properly
         """
         conn = Connector(
-            address='%s:%d' % (mongo_host, self.primary_p),
-            oplog_checkpoint='config.txt',
+            mongo_address='%s:%d' % (mongo_host, self.primary_p),
             ns_set=['test.test'],
-            auth_key=None
         )
         conn.start()
 
@@ -80,10 +78,9 @@ class TestMongoConnector(unittest.TestCase):
             pass
         open("temp_config.txt", "w").close()
         conn = Connector(
-            address='%s:%d' % (mongo_host, self.primary_p),
+            mongo_address='%s:%d' % (mongo_host, self.primary_p),
             oplog_checkpoint="temp_config.txt",
-            ns_set=['test.test'],
-            auth_key=None
+            ns_set=['test.test']
         )
 
         #test that None is returned if there is no config file specified.
@@ -117,10 +114,9 @@ class TestMongoConnector(unittest.TestCase):
         """
 
         conn = Connector(
-            address='%s:%d' % (mongo_host, self.primary_p),
+            mongo_address='%s:%d' % (mongo_host, self.primary_p),
             oplog_checkpoint=None,
-            ns_set=['test.test'],
-            auth_key=None
+            ns_set=['test.test']
         )
 
         #testing with no file
