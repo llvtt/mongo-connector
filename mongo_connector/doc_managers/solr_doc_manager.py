@@ -177,7 +177,7 @@ class DocManager(DocManagerBase):
 
         if doc.get('drop'):
             new_db, coll = self.command_helper.map_collection(db, doc['drop'])
-            if db:
+            if new_db:
                 self.solr.delete(q="ns:%s.%s" % (new_db, coll),
                                  commit=(self.auto_commit_interval == 0))
 
