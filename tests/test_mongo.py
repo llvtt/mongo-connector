@@ -100,10 +100,8 @@ class TestMongo(MongoTestCase):
     def setUp(self):
         self._remove()
         self.connector = Connector(
-            address='%s:%s' % (mongo_host, self.primary_p),
-            oplog_checkpoint="config.txt",
+            mongo_address='%s:%s' % (mongo_host, self.primary_p),
             ns_set=['test.test'],
-            auth_key=None,
             doc_managers=(self.mongo_doc,),
             gridfs_set=['test.test']
         )
