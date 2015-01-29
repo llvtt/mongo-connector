@@ -681,30 +681,31 @@ def main():
                " choose the logging method you would prefer.")
         sys.exit(1)
 
+    if ((options.logfile_when or
+         options.logfile_interval or
+         options.logfile_backups) and not options.logfile):
+        print("You must use a log file in order to specify --logfile-when, "
+              "--logfile-interval, or --logfile-backups.")
+        sys.exit(1)
+
     if options.enable_syslog:
         syslog_info = options.syslog_host.split(":")
-        syslog_host = logging.handlers.SysLogHandler(
+        log_handler = logging.handlers.SysLogHandler(
             address=(syslog_info[0], int(syslog_info[1])),
             facility=options.syslog_facility
         )
-        syslog_host.setLevel(loglevel)
-        logger.addHandler(syslog_host)
     elif options.logfile is not None:
-        logfileWhen = options.logfile_when
-        logfileInterval = options.logfile_interval
-        logfileBackupcount = options.logfile_backupcount
-
-        log_out = TimedRotatingFileHandler(options.logfile, when=logfileWhen, interval=logfileInterval, backupCount=logfileBackupcount)
-        log_out.setLevel(loglevel)
-        log_out.setFormatter(logging.Formatter(
-            '%(asctime)s - %(levelname)s - %(message)s'))
-        logger.addHandler(log_out)
+        log_handler = TimedRotatingFileHandler(
+            options.logfile,
+            when=options.logfile_when,
+            interval=options.logfile_interval,
+            backupCount=options.logfile_backups)
     else:
-        log_out = logging.StreamHandler()
-        log_out.setLevel(loglevel)
-        log_out.setFormatter(logging.Formatter(
-            '%(asctime)s - %(levelname)s - %(message)s'))
-        logger.addHandler(log_out)
+        log_handler = logging.StreamHandler()
+    log_handler.setLevel(loglevel)
+    log_handler.setFormatter(logging.Formatter(
+        '%(asctime)s - %(levelname)s - %(message)s'))
+    logger.addHandler(log_handler)
 
     logger.info('Beginning Mongo Connector')
 
