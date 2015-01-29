@@ -573,8 +573,9 @@ def main():
     #--syslog-host is to specify the syslog host.
     parser.add_option("--syslog-host", action="store", type="string",
                       dest="syslog_host", default="localhost:514", help=
-                      """Used to specify the syslog host."""
-                      """ The default is 'localhost:514'""")
+                      """The syslog host, which may be an address like """
+                      """'localhost:514' or, on Unix/Linux, the path to a """
+                      """device such as '/dev/log'.""")
 
     #--syslog-facility is to specify the syslog facility.
     parser.add_option("--syslog-facility", action="store", type="string",
@@ -681,17 +682,13 @@ def main():
                " choose the logging method you would prefer.")
         sys.exit(1)
 
-    if ((options.logfile_when or
-         options.logfile_interval or
-         options.logfile_backups) and not options.logfile):
-        print("You must use a log file in order to specify --logfile-when, "
-              "--logfile-interval, or --logfile-backups.")
-        sys.exit(1)
-
     if options.enable_syslog:
-        syslog_info = options.syslog_host.split(":")
+        syslog_info = options.syslog_host
+	if ':' in syslog_info:
+            log_host, log_port = syslog_info.split(':')
+            syslog_info = (log_host, int(log_port))
         log_handler = logging.handlers.SysLogHandler(
-            address=(syslog_info[0], int(syslog_info[1])),
+            address=syslog_info,
             facility=options.syslog_facility
         )
     elif options.logfile is not None:
