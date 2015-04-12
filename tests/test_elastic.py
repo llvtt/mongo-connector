@@ -19,6 +19,7 @@ import sys
 import time
 
 from elasticsearch import Elasticsearch
+from elasticsearch.exceptions import TransportError
 from gridfs import GridFS
 
 sys.path[0:0] = [""]
@@ -75,6 +76,14 @@ class ElasticsearchTestCase(unittest.TestCase):
     def _indices(self):
         return list(self.elastic_conn.indices.stats()['indices'].keys())
 
+    def get_eventually(self, id, index='test', doc_type='test', retries=10):
+        for i in range(retries):
+            try:
+                return self.elastic_conn.get(
+                    index=index, doc_type=doc_type, id=id)['_source']
+            except TransportError:
+                time.sleep(1)
+
 
 class TestElastic(ElasticsearchTestCase):
     """Integration tests for mongo-connector + Elasticsearch."""
@@ -103,11 +112,10 @@ class TestElastic(ElasticsearchTestCase):
             os.unlink("oplog.timestamp")
         except OSError:
             pass
-        docman = DocManager(elastic_pair)
         self.connector = Connector(
             mongo_address=self.repl_set.uri,
             ns_set=['test.test'],
-            doc_managers=(docman,),
+            doc_managers=(self.elastic_doc,),
             gridfs_set=['test.test']
         )
 
@@ -253,6 +261,71 @@ class TestElastic(ElasticsearchTestCase):
             self.assertEqual(item['name'], 'paul')
         find_cursor = retry_until_ok(self.conn['test']['test'].find)
         self.assertEqual(retry_until_ok(find_cursor.count), 1)
+
+    def test_insert_with_strict_schema(self):
+        self.elastic_conn.indices.delete(index='test', ignore=404)
+        self.elastic_conn.indices.create(
+            index='test',
+            body={
+                'mappings': {
+                    'test': {
+                        'dynamic': 'strict',
+                        'properties': {
+                            'meta': {
+                                'type': 'object',
+                                'dynamic': 'true'
+                            },
+                            'identity': {
+                                'properties': {
+                                    'name': {
+                                        'properties': {
+                                            'first_name': {'type': 'string'},
+                                            'last_name': {'type': 'string'}
+                                        }
+                                    },
+                                    'remarks': {
+                                        'dynamic': 'true',
+                                        'properties': {
+                                            'eye_color': {'type': 'string'}
+                                        }
+                                    }
+                                }
+                            },
+                            'age': {'type': 'integer'}
+                        }
+                    }
+                }
+            }
+        )
+        # Rebuild the DocManager's view of Elasticsearch mappings.
+        self.elastic_doc._build_fields()
+
+        # Test dynamic mapping at top-level.
+        self.conn.test.test.insert({'_id': 0, 'meta': {'height': 150}})
+        self.assertEqual({'meta': {'height': 150}}, self.get_eventually(0))
+
+        # Test strict mapping at top-level.
+        self.conn.test.test.insert({'_id': 1, 'meta': {'height': 177},
+                                    'is_cousin': False})
+        self.assertEqual({'meta': {'height': 177}}, self.get_eventually(1))
+
+        # Test nested dynamic mapping.
+        self.conn.test.test.insert(
+            {'_id': 2, 'identity': {'remarks': {'tatoos': {
+                'left_arm': {'picture': 'A giant puking monkey'}
+            }}}})
+        self.assertEqual({'identity': {'remarks': {'tatoos': {
+            'left_arm': {'picture': 'A giant puking monkey'}
+        }}}}, self.get_eventually(2))
+
+        # Test nested strict mapping.
+        self.conn.test.test.insert(
+            {'_id': 3, 'identity': {'name': {
+                'first_name': 'park', 'last_name': 'chung-hee',
+                'nickname': 'sparky'}}})
+        self.assertEqual({'identity': {'name': {
+            'first_name': 'park', 'last_name': 'chung-hee'}}},
+                         self.get_eventually(3))
 
 
 if __name__ == '__main__':

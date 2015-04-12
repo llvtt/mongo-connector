@@ -238,6 +238,46 @@ class TestElasticDocManager(ElasticsearchTestCase):
         self.assertNotIn('test2', self._mappings())
         self.assertNotIn('test3', self._mappings())
 
+    def test_clean_doc(self):
+        self.elastic_doc.mapping_fields_dict = {
+            'foo.bar': {None: set(['name', 'height'])},
+            'foo.nested_dynamic': {None: set(['name', 'person'])},
+            'foo.nested_strict': {'person': set(['age'])}
+        }
+
+        # Document containing 1 field not in the mapping.
+        doc = {'name': 'elmo', 'color': 'red'}
+        # Document with only valid fields.
+        doc_valid = {'name': 'oscar', 'height': 52}
+
+        # Namespace not in _namespace_fields.
+        self.assertEqual(
+            doc, self.elastic_doc._clean_doc(doc, 'something.else'))
+
+        # Nothing needs to be removed.
+        self.assertEqual(
+            doc_valid, self.elastic_doc._clean_doc(doc_valid, 'foo.bar'))
+
+        # Just remove one field at the top level.
+        self.assertEqual(
+            {'name': 'elmo'}, self.elastic_doc._clean_doc(doc, 'foo.bar'))
+
+        # Test nested fields, where the mapping is otherwise strict.
+        self.assertEqual(
+            {'name': 'elmo', 'person': {'age': 110, 'weight': 56}},
+            self.elastic_doc._clean_doc(
+                {'name': 'elmo', 'height': 50,
+                 'person': {'age': 110, 'weight': 56}},
+                'foo.nested_dynamic'))
+
+        # Test a strict nested field, where the mapping is otherwise dynamic.
+        self.assertEqual(
+            {'name': 'elmo', 'height': 50, 'person': {'age': 110}},
+            self.elastic_doc._clean_doc(
+                {'name': 'elmo', 'height': 50,
+                 'person': {'age': 110, 'weight': 56}},
+                'foo.nested_strict'))
+
 
 if __name__ == '__main__':
     unittest.main()

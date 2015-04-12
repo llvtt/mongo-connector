@@ -68,10 +68,84 @@ class DocManager(DocManagerBase):
         self.has_attachment_mapping = False
         self.attachment_field = attachment_field
 
+        self._build_fields()
+
     def _index_and_mapping(self, namespace):
         """Helper method for getting the index and type from a namespace."""
         index, doc_type = namespace.split('.', 1)
         return index.lower(), doc_type
+
+    def _get_mapping_strictnesses(self, mapping_fields, mapping_definition,
+                                  default_strictness='true', prefix=None):
+        """Populate a dictionary describing what fields are allowed
+        at each level in a document, based on an Elasticsearch mapping.
+        """
+        # Inherit upper-level's value for 'dynamic'.
+        dynamic = mapping_definition.get('dynamic', default_strictness)
+        fields = mapping_definition.get('properties', [])
+
+        # Strict mapping at this level?
+        if fields and dynamic == 'strict':
+            # Note all fields in the strict mapping.
+            mapping_fields[prefix] = set(fields)
+
+        for field_name in fields:
+            field_props = fields[field_name]
+            full_field_name = (prefix + '.' + field_name
+                               if prefix else field_name)
+            self._get_mapping_strictnesses(
+                mapping_fields, field_props, dynamic, full_field_name)
+
+    def _build_fields(self):
+        """Get all valid fields corresponding to each Elasticsearch mapping."""
+        self.mapping_fields_dict = {}
+        indices = self.elastic.indices.get_mapping()
+        for index_name in indices:
+            mappings = indices[index_name].get('mappings', [])
+            for mapping_name in mappings:
+                namespace = '%s.%s' % (index_name, mapping_name)
+                mapping_fields = {}
+                self.mapping_fields_dict[namespace] = mapping_fields
+                mapping = mappings[mapping_name]
+                self._get_mapping_strictnesses(mapping_fields, mapping)
+
+    def _apply_mapping(self, document, mapping_fields,
+                       prefix=None, collector=None):
+        """Prune fields from a document based on an Elasticsearch mapping."""
+        strict_fields = mapping_fields.get(prefix)
+        new_doc = collector if collector is not None else {}
+        for field in document:
+            value = document[field]
+            # Include this field if any of the following are true:
+            # 1. There is no mapping to describe this field.
+            # 2. This field was defined explicitly.
+            # 3. We're within a dynamic mapping.
+            if (strict_fields is None or field in strict_fields):
+                if isinstance(value, dict):
+                    # Assume that we'll fill in a sub-document.
+                    new_doc[field] = {}
+                    full_field_name = prefix + '.' + field if prefix else field
+                    self._apply_mapping(
+                        value, mapping_fields,
+                        prefix=full_field_name, collector=new_doc[field])
+                    # If we couldn't copy anything over, remove the empty
+                    # sub-document.
+                    if not new_doc[field]:
+                        new_doc.pop(field)
+                else:
+                    new_doc[field] = value
+
+        return new_doc
+
+    def _clean_doc(self, document, namespace):
+        """Prune fields from a document based on the Elasticsearch mapping
+        corresponding to the given namespace.
+        """
+        mapping_fields = self.mapping_fields_dict.get(namespace)
+        if mapping_fields:
+            return self._apply_mapping(document, mapping_fields)
+        # If there's no mapping, then just return the original document.
+        return document
 
     def stop(self):
         """Stop the auto-commit thread."""
@@ -137,8 +211,10 @@ class DocManager(DocManagerBase):
             "_ts": timestamp
         }
         # Index the source document, using lowercase namespace as index name.
+        document_body = self._clean_doc(
+            self._formatter.format_document(doc), namespace)
         self.elastic.index(index=index, doc_type=doc_type,
-                           body=self._formatter.format_document(doc), id=doc_id,
+                           body=document_body, id=doc_id,
                            refresh=(self.auto_commit_interval == 0))
         # Index document metadata with original namespace (mixed upper/lower).
         self.elastic.index(index=self.meta_index_name, doc_type=self.meta_type,
