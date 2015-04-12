@@ -238,6 +238,10 @@ class TestElasticDocManager(ElasticsearchTestCase):
         self.assertNotIn('test2', self._mappings())
         self.assertNotIn('test3', self._mappings())
 
+    def test_clean_doc(self):
+        # TODO
+        pass
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -87,3 +87,23 @@ def log_fatal_exceptions(func):
             LOG.error("Fatal Exception")
             raise
     return wrapped
+
+
+def retrieve_field(path, document):
+    """Retrieve a field from a document, given the path to that field.
+    Raises KeyError if the path does not exist.
+    """
+    d = document
+    for part in path:
+        d = d[part]
+    return d
+
+
+def set_field(path, document, value):
+    """Put a value at a path within a document."""
+    d = document
+    for part in path[:-1]:
+        if part not in d or not isinstance(d[part], dict):
+            d[part] = {}
+        d = d[part]
+    d[path[-1]] = value

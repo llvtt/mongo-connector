@@ -254,6 +254,10 @@ class TestElastic(ElasticsearchTestCase):
         find_cursor = retry_until_ok(self.conn['test']['test'].find)
         self.assertEqual(retry_until_ok(find_cursor.count), 1)
 
+    def test_insert_with_strict_schema(self):
+        # TODO!
+        pass
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -18,6 +18,7 @@ Receives documents from an OplogThread and takes the appropriate actions on
 Elasticsearch.
 """
 import base64
+import collections
 import logging
 
 from threading import Timer
@@ -25,13 +26,15 @@ from threading import Timer
 import bson.json_util
 
 from elasticsearch import Elasticsearch, exceptions as es_exceptions
+from elasticsearch.client import IndicesClient
 from elasticsearch.helpers import scan, streaming_bulk
 
 from mongo_connector import errors
 from mongo_connector.compat import u
 from mongo_connector.constants import (DEFAULT_COMMIT_INTERVAL,
                                        DEFAULT_MAX_BULK)
-from mongo_connector.util import exception_wrapper, retry_until_ok
+from mongo_connector.util import (
+    exception_wrapper, retry_until_ok, retrieve_field, set_field)
 from mongo_connector.doc_managers.doc_manager_base import DocManagerBase
 from mongo_connector.doc_managers.formatters import DefaultDocumentFormatter
 
@@ -68,10 +71,74 @@ class DocManager(DocManagerBase):
         self.has_attachment_mapping = False
         self.attachment_field = attachment_field
 
+        self._build_fields()
+
     def _index_and_mapping(self, namespace):
         """Helper method for getting the index and type from a namespace."""
         index, doc_type = namespace.split('.', 1)
         return index.lower(), doc_type
+
+    def _build_fields(self):
+        """Get all allowable fields corresponding to each namespace."""
+        # TODO:
+        # 1. Detect if the default mapping type is not 'dynamic'
+        # -- I don't think this is necessary. It seems like there are only
+        # templates, which get copied over to the final mapping type.
+        # 2. Support strict mappings within sub-documents.
+
+        # Mapping of namespaces --> fields that have a strict mapping.
+        # If the value corresponding to a namespace is {}, then the whole
+        # mapping is strict. If the namespace is not in
+        # self._namespace_fields, then the whole mapping is dynamic.
+        self._namespace_fields = collections.defaultdict(set)
+        idx_client = IndicesClient(self.elastic)
+        # Looks like:
+        #   {'indexname':
+        #     {'mappings':
+        #       {'mappingname': {'properties': {'fieldname': {...}}}},
+        #       ...
+        #     },
+        #    ...
+        #   }
+        indices = idx_client.get_mapping()
+        for index in indices:
+            mappings = indices[index]
+            for mapping in mappings:
+                fields = mapping.get('properties', {})
+                if mapping.get('dynamic', 'true') == 'strict':
+                    # All fields effectively have a strict mapping.
+                    if fields:
+                        namespace = '%s.%s' % (index, mapping)
+                        self._namespace_fields[namespace] = set(fields)
+                else:
+                    # Traverse the document looking for fields with a strict
+                    # mapping.
+                    for field in fields:
+                        if field.get('dynamic', 'true') == 'strict':
+                            self._namespace_fields[namespace].add(field)
+
+    def _clean_doc(self, namespace, document):
+        """Get a new dict containing only the allowed fields taken from the
+        mapping type for the namespace. If the mapping is dynamic or undefined,
+        just return the same document back.
+        """
+
+        allowed_fields = self._namespace_fields.get(namespace)
+        if not allowed_fields:
+            # If no mapping is given, it is not strict. Short-circuit.
+            return document
+
+        cleaned = {}
+
+        for allowed_field in allowed_fields:
+            parts = allowed_field.split('.')
+            try:
+                set_field(parts, cleaned, retrieve_field(parts, document))
+            except KeyError:
+                # The field doesn't exist in the source document.
+                pass
+
+        return cleaned
 
     def stop(self):
         """Stop the auto-commit thread."""

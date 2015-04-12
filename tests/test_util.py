@@ -22,7 +22,9 @@ sys.path[0:0] = [""]
 
 from mongo_connector.util import (bson_ts_to_long,
                                   long_to_bson_ts,
-                                  retry_until_ok)
+                                  retry_until_ok,
+                                  retrieve_field,
+                                  set_field)
 from tests import unittest
 
 
@@ -60,6 +62,45 @@ class TestUtil(unittest.TestCase):
 
         self.assertTrue(retry_until_ok(err_func))
         self.assertEqual(err_func.counter, 3)
+
+    def test_retrieve_field(self):
+        test_document = {
+            'outer': 'space',
+            'nested0': {
+                'nested1': {
+                    'greeting': 'hello'
+                }
+            }
+        }
+        # Key does not exist.
+        self.assertRaises(KeyError, retrieve_field, ['garbage'], test_document)
+        # Retrieve top-level key.
+        self.assertEqual('space', retrieve_field(['outer'], test_document))
+        # Retrieve nested key.
+        self.assertEqual(
+            'hello',
+            retrieve_field(['nested0', 'nested1', 'greeting'], test_document))
+
+    def test_set_field(self):
+        test_document = {
+            'outer': 'space',
+            'nested0': {
+                'nested1': {
+                    'greeting': 'hello'
+                }
+            }
+        }
+
+        def set_and_assert(path, value):
+            set_field(path, test_document, value)
+            self.assertEqual(value, retrieve_field(path, test_document))
+
+        # Replace existing field.
+        set_and_assert(['outer'], 'limits')
+        # Replace existing field, turning it into a dictionary.
+        set_and_assert(['outer', 'limits'], 'aliens')
+        # Set nested field, merging it into an existing dictionary.
+        set_and_assert(['nested0', 'nested1', 'exclamation'], 'Gadzooks!')
 
 
 if __name__ == '__main__':
