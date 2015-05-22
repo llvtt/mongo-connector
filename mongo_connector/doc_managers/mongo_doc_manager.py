@@ -25,7 +25,7 @@ import logging
 import pymongo
 
 from gridfs import GridFS
-from mongo_connector import errors
+from mongo_connector import errors, constants
 from mongo_connector.util import exception_wrapper
 from mongo_connector.doc_managers.doc_manager_base import DocManagerBase
 
@@ -58,6 +58,7 @@ class DocManager(DocManagerBase):
         except pymongo.errors.ConnectionFailure:
             raise errors.ConnectionFailed("Failed to connect to MongoDB")
         self.namespace_set = kwargs.get("namespace_set")
+        self.chunk_size = kwargs.get('chunk_size', constants.DEFAULT_MAX_BULK)
 
     def _db_and_collection(self, namespace):
         return namespace.split('.', 1)
@@ -143,6 +144,37 @@ class DocManager(DocManagerBase):
             "ns": namespace
         })
         self.mongo[database][coll].save(doc)
+
+    @wrap_exceptions
+    def bulk_upsert(self, docs, namespace, timestamp):
+        def iterate_chunks(iterable):
+            while True:
+                ret = []
+                for i in range(self.chunk_size):
+                    try:
+                        ret.append(next(iterable))
+                    except StopIteration:
+                        yield ret
+                yield ret
+
+        database, coll = self._db_and_collection(namespace)
+        chunks = iterate_chunks(docs)
+        chunk = next(chunks)
+        while chunk:
+            meta = [{'_id': d['_id'], 'ns': namespace, 'ts': timestamp}
+                    for d in chunk]
+            try:
+                self.mongo['__mongo_connector'][namespace].insert(
+                    meta, continue_on_error=True)
+            except pymongo.errors.DuplicateKeyError as e:
+                LOG.warn('Continuing after DuplicateKeyError in metadata: '
+                         + str(e))
+            try:
+                self.mongo[database][coll].insert(
+                    chunk, continue_on_error=True)
+            except pymongo.errors.DuplicateKeyError as e:
+                LOG.warn('Continuing after DuplicateKeyError: ' + str(e))
+            chunk = next(chunks)
 
     @wrap_exceptions
     def remove(self, document_id, namespace, timestamp):
