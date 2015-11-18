@@ -9,16 +9,13 @@ python:
 services:
   - elasticsearch
 
-before_install:
-  - curl -O https://download.elasticsearch.org/elasticsearch/elasticsearch/elasticsearch-1.7.3.deb && sudo dpkg -i --force-confnew elasticsearch-1.7.3.deb
-
 install:
   - pip install pymongo==2.9
   - pip install mongo-orchestration==0.3.1
   - curl -O http://archive.apache.org/dist/lucene/solr/4.9.1/solr-4.9.1.tgz
   - tar -zxf solr-4.9.1.tgz
   - cp mongo_connector/doc_managers/schema.xml solr-4.9.1/example/solr/collection1/conf/
-  - sudo /usr/share/elasticsearch/bin/plugin install elasticsearch/elasticsearch-mapper-attachments/2.7.1
+  - sudo /usr/share/elasticsearch/bin/plugin install elasticsearch/elasticsearch-mapper-attachments/2.4.3
 
 before_script:
   - sudo service elasticsearch restart
